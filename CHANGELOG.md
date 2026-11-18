@@ -80,6 +80,22 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
   plays it as `shift_phase(line.tone, phase_rad)`: no pulse and no time.
   The operations guide's new "Phase frames and virtual Z gates" section
   gives the sign convention and why a simulated state is in the frame.
+- **Qudit tunings and coupling controls.** A quantum system can state what
+  a baseband control does: `PhysicalQudit(..., tuning=FluxTuning(...))` is
+  how a qudit's own frequency moves with an amplitude (flux quanta from its
+  idle point, signed), and `Coupling(..., control=...)` what turns a
+  coupling on, a `ChargeCoupling` (made by tuning both qudits, one side
+  each) or an `ExchangeControl` (the pair's own control, its exchange
+  tabulated). `PhysicalQudit.frequency_at`, `anharmonicity_at` and
+  `amplitude_for` and `Coupling.at(amplitude, side=...)` read them without
+  compiling: frequencies, anharmonicities and the exchange of each pair of
+  levels at an operating point. Each component names its `source`.
+  `transmon_surface17` gives every qudit the `FluxTuning` of its
+  calibrated circuit and every coupling a `ChargeCoupling` of its g_c.
+  System files keep them. Nothing compiles, schedules, exports or
+  simulates differently: systems without them keep their fingerprints and
+  system files, and the components load only with a system that declares
+  one.
 - **Post-selection.** `SimulationResult.postselect(keep)` is the result
   over the branches the test `keep` accepts (a function of a `Branch`, as
   `lambda b: b.answers("herald")[-1]`): their state, normalized, their

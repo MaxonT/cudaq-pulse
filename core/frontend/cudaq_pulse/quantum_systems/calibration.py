@@ -274,16 +274,39 @@ class Calibration:
         """*target* with each calibrated pair's coupling set to its exchange
         at the qubits' frequencies in the target (``_exchange``), and each
         calibrated qudit's pulses (``_calibrated_pulses``) and readout errors
-        set. A qudit matches its label.
+        set. A qudit whose circuit is calibrated and that gives no tuning
+        takes a ``FluxTuning`` of it, and a coupling of two tuned qudits that
+        gives no control a ``ChargeCoupling`` with the calibration's g_c. A
+        qudit matches its label.
         """
         from .base import Coupling, DispersiveReadout
-        from .transmon import _calibrated_pulses
+        from .transmon import _calibrated_pulses, _tunings
 
         qudits = target.qudits
         idle_exchange = self._idle_exchange
+        tunings, control = _tunings(self)
+        pulses = self._qudit_pulses()
+        made: dict[Any, Any] = {}
+        calibrated = {}
+        for i, q in qudits.items():
+            changes: dict[str, Any] = {}
+            values = pulses.get(q.label)
+            if values is not None:
+                beta, pulse, errors = values
+                if beta is not None or pulse is not None:
+                    changes["calibrations"] = _calibrated_pulses(q._calibrations, beta, pulse, made)
+                readout = q.readout
+                if errors is not None and readout.__class__ is DispersiveReadout:
+                    changes["readout"] = readout.replace(error_0to1=errors[0], error_1to0=errors[1])
+            tuning = tunings.get(q.label)
+            if tuning is not None and q.tuning is None:
+                changes["tuning"] = tuning
+            if changes:
+                q = q.replace(**changes)
+            calibrated[i] = q
         couplings = []
         for c in target.couplings:
-            a, b = qudits[c.qudits[0]], qudits[c.qudits[1]]
+            a, b = calibrated[c.qudits[0]], calibrated[c.qudits[1]]
             strength = self._exchange(
                 idle_exchange, f"{a.label}-{b.label}", a.frequency_hz, b.frequency_hz
             )
@@ -291,30 +314,16 @@ class Calibration:
                 strength = self._exchange(
                     idle_exchange, f"{b.label}-{a.label}", b.frequency_hz, a.frequency_hz
                 )
-            if strength is not None:
+            given = c.control
+            if given is None and a.tuning is not None and b.tuning is not None:
+                given = control((a.tuning, b.tuning))
+            if strength is not None or given is not c.control:
+                strength = c.strength_hz if strength is None else strength
                 if c.__class__ is Coupling:
-                    c = Coupling(c.qudits, strength, c._calibrations)
+                    c = Coupling(c.qudits, strength, c._calibrations, given)
                 else:
-                    c = c.replace(strength_hz=strength)
+                    c = c.replace(strength_hz=strength, control=given)
             couplings.append(c)
-        pulses = self._qudit_pulses()
-        if not pulses:
-            return target.replace(couplings=couplings)
-        made: dict[Any, Any] = {}
-        calibrated = {}
-        for i, q in qudits.items():
-            values = pulses.get(q.label)
-            if values is not None:
-                beta, pulse, errors = values
-                changes: dict[str, Any] = {}
-                if beta is not None or pulse is not None:
-                    changes["calibrations"] = _calibrated_pulses(q._calibrations, beta, pulse, made)
-                readout = q.readout
-                if errors is not None and readout.__class__ is DispersiveReadout:
-                    changes["readout"] = readout.replace(error_0to1=errors[0], error_1to0=errors[1])
-                if changes:
-                    q = q.replace(**changes)
-            calibrated[i] = q
         return target.replace(qudits=calibrated, couplings=couplings)
 
     def _exchange(
@@ -367,6 +376,39 @@ class Calibration:
         self._pulses = found
         return found
 
+    def _tunings(
+        self,
+    ) -> tuple[str, float, tuple[tuple[str, tuple[float, float, float, float]], ...]]:
+        """What a quantum system's tuning components take of the calibration:
+        the key of the charge coupling used, g_c in Hz, and each qudit whose
+        circuit is calibrated with (E_C, E_J,max, d, idle flux), by label.
+        Read once; preset for an indexed shipped calibration."""
+        found: Any = self.__dict__.get("_tuning_values")
+        if found is not None:
+            return found  # type: ignore[no-any-return]
+        couplings = self._couplings()
+        used = couplings["used"]
+        qudits = self._data["qudits"]
+        found = (
+            used,
+            couplings[used]["value"],
+            tuple(
+                (
+                    label,
+                    (
+                        q["ec"]["value"],
+                        q["ej_max"]["value"],
+                        q["asymmetry_d"]["value"],
+                        _SWEET_SPOT_FLUX[q["sweet_spot_idle"]],
+                    ),
+                )
+                for label, q in qudits.items()
+                if q.get("flux_quanta_capable")
+            ),
+        )
+        self._tuning_values = found
+        return found  # type: ignore[no-any-return]
+
     @cached_property
     def _idle_exchange(self) -> Mapping[str, tuple[float, Any]]:
         """Each pair's stored idle exchange and the idle frequencies it was
@@ -414,7 +456,7 @@ def _indexed(name: str, measurement_run: str | None) -> Calibration | None:
     entry = SHIPPED.get(name)
     if entry is None or CALIBRATIONS.get(name) != entry[0]:
         return None
-    digest, default, measurement_runs, idle_exchange, qudit_pulses = entry
+    digest, default, measurement_runs, idle_exchange, qudit_pulses, tunings = entry
     measurement_run = default if measurement_run is None else measurement_run
     if measurement_run not in measurement_runs:
         return None
@@ -422,6 +464,7 @@ def _indexed(name: str, measurement_run: str | None) -> Calibration | None:
     unread.name, unread.measurement_run, unread._shipped = name, measurement_run, digest
     unread._idle_exchange = idle_exchange
     unread._pulses = dict(qudit_pulses)
+    unread._tuning_values = tunings
     return unread
 
 

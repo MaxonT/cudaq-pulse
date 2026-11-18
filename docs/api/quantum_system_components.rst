@@ -51,6 +51,51 @@ Couplings
    :members:
    :undoc-members:
 
+Tunings and coupling controls
+-----------------------------
+
+A qudit's ``tuning`` says how its own frequency is tuned, and a coupling's
+``control`` what turns its interaction on; both are components of their
+modality, as ``drive`` and ``readout`` are, and both may be left out (a
+qudit at a fixed frequency, a coupling that is always on). An amplitude is
+in the component's ``unit``, an offset from the idle point, and signed.
+``PhysicalQudit.frequency_at``, ``anharmonicity_at`` and ``amplitude_for``
+and ``Coupling.at`` read them without compiling anything:
+
+.. code-block:: python
+
+   qs = pulse.quantum_system("transmon_surface17")
+   d4, x2 = qs.qudit("D4"), qs.qudit("X2")
+   qs.physical_qudits[d4.index].frequency_at(-0.3)         # Hz, 0.3 flux quanta off idle
+   qs.physical_qudits[d4.index].amplitude_for(5.276e9)     # -0.3015
+   point = qs.coupling(x2, d4).at(-0.3015, side=d4)        # X2 idles
+   point.frequencies_hz, point.exchange_hz, point.exchanges_hz[(1, 1), (2, 0)]
+
+Each component records where its values come from in ``source``: on the
+shipped system, the calibration entries they are read from, which
+``Calibration.entry`` gives with their kind, source and method. In a system
+file a qudit's ``tuning`` and a coupling's ``control`` are mappings with
+their ``kind`` (``"flux"``; ``"charge"``, ``"exchange"``) and fields, written
+only where given; a ``ChargeCoupling``'s tunings are its qudits' own.
+
+.. autoclass:: cudaq_pulse.quantum_systems.Tuning
+   :members:
+
+.. autoclass:: cudaq_pulse.quantum_systems.FluxTuning
+   :members:
+
+.. autoclass:: cudaq_pulse.quantum_systems.CouplingControl
+   :members:
+
+.. autoclass:: cudaq_pulse.quantum_systems.ChargeCoupling
+   :members:
+
+.. autoclass:: cudaq_pulse.quantum_systems.ExchangeControl
+   :members:
+
+.. autoclass:: cudaq_pulse.quantum_systems.CouplingPoint
+   :members:
+
 Gate calibrations
 -----------------
 

@@ -86,7 +86,10 @@ def transmon_surface17(calibration: Any = "transmon_surface17") -> QuantumSystem
     each ``X``'s DRAG coefficient (0.51-0.58 ns), an ``X`` of each qudit's
     1-2 transition (``transition=(1, 2)``, 20 ns) and readout assignment
     errors with which ``readout="model"`` reproduces Tab. I's two-state
-    readout errors. ``calibration=None`` leaves them out.
+    readout errors. Each qudit's ``tuning`` is the ``FluxTuning`` of its
+    calibrated circuit and each coupling's ``control`` a ``ChargeCoupling``
+    of the calibration's g_c: the CZ is made by tuning both qudits.
+    ``calibration=None`` leaves them out.
 
     No residual ZZ is listed: the paper gives no per-pair values, only
     that the calculated idle ZZ is below about 8 kHz. Simulated with three
@@ -164,8 +167,11 @@ def _build_surface17(calibration: Calibration | None) -> _Description:
     }
     pulses: Mapping[str, Any] = {}
     made: dict[Any, Any] = {}
+    tunings: dict[str, Any] = {}
+    control: Any = None
     if calibration is not None:
         pulses, idle_exchange = calibration._qudit_pulses(), calibration._idle_exchange
+        tunings, control = _tunings(calibration)
     for index, q in enumerate(_k.QUDITS):
         given = calibrations[q.label[0]]
         error_0to1 = error_1to0 = 0.0
@@ -193,6 +199,7 @@ def _build_surface17(calibration: Calibration | None) -> _Description:
                 error_1to0=error_1to0,
                 error_0to1=error_0to1,
             ),
+            tuning=tunings.get(q.label),
             calibrations=given,
         )
     couplings = []
@@ -208,6 +215,7 @@ def _build_surface17(calibration: Calibration | None) -> _Description:
                 )
         if strength is None:
             strength = _k.coupling_11_20_hz(e.auxiliary, e.data) / math.sqrt(2.0)
+        sides = (qudits[a].tuning, qudits[d].tuning)
         couplings.append(
             Coupling(
                 (a, d),
@@ -221,6 +229,7 @@ def _build_surface17(calibration: Calibration | None) -> _Description:
                         )
                     }
                 ),
+                control=None if control is None or None in sides else control(sides),
             )
         )
     return _Description(
@@ -229,6 +238,32 @@ def _build_surface17(calibration: Calibration | None) -> _Description:
         couplings=couplings,
         attribution=_k.CITATION,
     )
+
+
+def _tunings(calibration: Calibration) -> tuple[dict[str, Any], Any]:
+    """Each calibrated qudit's ``FluxTuning`` by label, from its circuit in
+    *calibration*, and the ``ChargeCoupling`` of a pair given its two sides'
+    tunings, with the calibration's g_c."""
+    from .tuning import ChargeCoupling, FluxTuning
+
+    used, g_c, circuits = calibration._tunings()
+    tunings = {
+        label: FluxTuning(
+            ec_hz=ec,
+            ej_max_hz=ej_max,
+            asymmetry=d,
+            idle_flux=idle,
+            source=f"{calibration.name} calibration, qudits.{label}: ec, ej_max, asymmetry_d, "
+            "sweet_spot_idle",
+        )
+        for label, (ec, ej_max, d, idle) in circuits
+    }
+    source = f"{calibration.name} calibration, coupling.charge_coupling_g_c.{used}"
+
+    def control(sides: tuple[Any, Any]) -> ChargeCoupling:
+        return ChargeCoupling(charge_coupling_hz=g_c, tunings=sides, source=source)
+
+    return tunings, control
 
 
 def _calibrated_pulses(given: Any, beta: Any, pulse: Any, made: dict[Any, Any]) -> Any:

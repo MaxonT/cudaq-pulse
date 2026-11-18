@@ -132,10 +132,14 @@ def _fingerprint(target: _Description, layout: tuple[int, ...], calibration: Any
             None if (readout := q.readout) is None else (type(readout).__name__, readout._values),
             q._calibrations._content,  # type: ignore[attr-defined]
         )
+        # A tuning joins the content only where one is given, so systems
+        # without one keep their fingerprints.
+        + (() if (tuning := q.tuning) is None else ((type(tuning).__name__, tuning._values),))
         for q in sorted(target.qudits.values(), key=lambda q: q.index)
     ]
     couplings = [
         (c.qudits, c.strength_hz, c._calibrations._content)  # type: ignore[attr-defined]
+        + (() if (control := c.control) is None else ((type(control).__name__, control._values),))
         for c in target.couplings
     ]
     residual_zz = [(x.qudits, x.rate_hz) for x in target.residual_zz]

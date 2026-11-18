@@ -190,6 +190,25 @@ def _index_entry(name):
             )
             for q in data["qudits"]
         ),
+        (
+            data["coupling"]["charge_coupling_g_c"]["used"],
+            data["coupling"]["charge_coupling_g_c"][
+                data["coupling"]["charge_coupling_g_c"]["used"]
+            ]["value"],
+            tuple(
+                (
+                    q,
+                    (
+                        v["ec"]["value"],
+                        v["ej_max"]["value"],
+                        v["asymmetry_d"]["value"],
+                        {"upper": 0.0, "lower": 0.5}[v["sweet_spot_idle"]],
+                    ),
+                )
+                for q, v in data["qudits"].items()
+                if v.get("flux_quanta_capable")
+            ),
+        ),
     )
 
 

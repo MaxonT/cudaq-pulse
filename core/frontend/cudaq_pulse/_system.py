@@ -2611,8 +2611,8 @@ _QUDIT_FIELDS = (
     "thermal_population",
 )
 # Written only when a qudit gives them.
-_QUDIT_EXTRAS = ("calibrations", "metadata")
-_COUPLING_FIELDS = ("qudits", "strength_hz", "calibrations")
+_QUDIT_EXTRAS = ("tuning", "calibrations", "metadata")
+_COUPLING_FIELDS = ("qudits", "strength_hz", "calibrations", "control")
 _RESIDUAL_ZZ_FIELDS = ("qudits", "rate_hz")
 # The keys an entry must give, with the fix for each.
 _QUDITS_FIX = "give the indices of the two qudits, as [0, 1]"
@@ -2660,10 +2660,22 @@ def _component_kinds() -> dict[str, dict[str, type[Any]]]:
     return {"drive": {"microwave": MicrowaveDrive}, "readout": {"dispersive": DispersiveReadout}}
 
 
+def _tuning_kinds() -> dict[str, dict[str, type[Any]]]:
+    """The tunings of qudits and controls of couplings a system file holds,
+    by the member they set and the kind it writes; read only for a system
+    that declares one."""
+    from .quantum_systems.tuning import ChargeCoupling, ExchangeControl, FluxTuning
+
+    return {
+        "tuning": {"flux": FluxTuning},
+        "control": {"charge": ChargeCoupling, "exchange": ExchangeControl},
+    }
+
+
 def _component_data(member: str, component: Any) -> dict[str, Any] | None:
     if component is None:
         return None
-    kinds = _component_kinds()[member]
+    kinds = (_tuning_kinds() if member in ("tuning", "control") else _component_kinds())[member]
     kind = next((k for k, cls in kinds.items() if type(component) is cls), None)
     if kind is None:
         from ._errors import UnsupportedError
@@ -2672,7 +2684,15 @@ def _component_data(member: str, component: Any) -> dict[str, Any] | None:
             f"a system file holds a qudit's {member} as one of {', '.join(kinds)}; "
             f"got a {type(component).__name__}"
         )
-    return {"kind": kind, **dict(zip(component._fields, component._values, strict=True))}
+    # A ChargeCoupling's tunings are its qudits' own, which the file gives with them.
+    return {
+        "kind": kind,
+        **{
+            field: _plain(value)
+            for field, value in zip(component._fields, component._values, strict=True)
+            if field != "tunings"
+        },
+    }
 
 
 def _calibration_data(calibrations: Mapping[Any, Any]) -> list[dict[str, Any]]:
@@ -2695,6 +2715,8 @@ def _qudit_data(q: Any) -> dict[str, Any]:
         for key in _QUDIT_FIELDS
         for value in (getattr(q, key),)
     }
+    if q.tuning is not None:
+        data["tuning"] = _component_data("tuning", q.tuning)
     if q._calibrations:
         data["calibrations"] = _calibration_data(q._calibrations)
     if q.metadata:
@@ -2733,6 +2755,7 @@ def _quantum_data(target: _Description) -> dict[str, Any]:
         "couplings": [
             {"qudits": list(c.qudits), "strength_hz": c.strength_hz}
             | ({"calibrations": _calibration_data(c._calibrations)} if c._calibrations else {})
+            | ({} if c.control is None else {"control": _component_data("control", c.control)})
             for c in target.couplings
         ],
         "residual_zz": [
@@ -2840,10 +2863,10 @@ class _Reader:
                 )
         return data
 
-    def component(self, data: Any, path: str, member: str) -> Any:
+    def component(self, data: Any, path: str, member: str, sides: Any = ()) -> Any:
         """A qudit's *member* (``drive`` or ``readout``): the component of the
         kind *data* names, with its fields."""
-        kinds = _component_kinds()[member]
+        kinds = (_tuning_kinds() if member in ("tuning", "control") else _component_kinds())[member]
         if not isinstance(data, Mapping):
             self.problem(path, f"must be a mapping, got {type(data).__name__}", data)
             return None
@@ -2857,9 +2880,12 @@ class _Reader:
                 fix=f"the kinds are {', '.join(kinds)}",
             )
             return None
-        known = made._fields
+        known = tuple(k for k in made._fields if k != "tunings")
         self.mapping(data, path, ("kind", *known))
-        return self.build(path, made, **{k: data[k] for k in known if k in data})
+        given = {k: data[k] for k in known if k in data}
+        if "tunings" in made._fields:
+            given["tunings"] = sides
+        return self.build(path, made, **given)
 
     def build[T](self, path: str, make: Callable[..., T], **kwargs: Any) -> T | None:
         try:
@@ -2883,7 +2909,7 @@ class _Reader:
             if entry is not None:
                 entry = {
                     key: self.component(value, f"{where}.{key}", key)
-                    if key in ("drive", "readout") and value is not None
+                    if key in ("drive", "readout", "tuning") and value is not None
                     else self.calibrations(value, f"{where}.{key}", "qudit")
                     if key == "calibrations"
                     else value
@@ -2903,6 +2929,16 @@ class _Reader:
             if "calibrations" in entry:
                 given["calibrations"] = self.calibrations(
                     entry["calibrations"], f"{where}.calibrations", "coupling"
+                )
+            if entry.get("control") is not None:
+                # A ChargeCoupling tunes the coupled qudits by their own tunings.
+                pair = entry["qudits"] if isinstance(entry["qudits"], Sequence) else ()
+                sides = tuple(
+                    getattr(qudits.get(q) if isinstance(q, int) else None, "tuning", None)
+                    for q in pair
+                )
+                given["control"] = self.component(
+                    entry["control"], f"{where}.control", "control", sides
                 )
             coupling = self.build(where, Coupling, **given)
             if coupling is not None:
