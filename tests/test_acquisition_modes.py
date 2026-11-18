@@ -105,7 +105,7 @@ def test_acquire_level_is_the_readout_it_always_was():
 def test_an_integrated_readout_is_marked_in_the_ir_and_both_exports():
     lowered = _lower(both)
     text = lowered.mlir()
-    assert ", iq <{" in text and ", integrated <{" in text
+    assert ", level <{" in text and ", integrated <{" in text
     for version in (1, 2):
         first, second = _readouts(lowered.export_to_controller(version=version))
         assert "acquire" not in first
@@ -210,6 +210,7 @@ def test_a_point_has_no_level(kernel, message):
     [
         ("trace", 'acquire is "level" or "integrated".*trace and counts are not supported yet'),
         ("raw", 'acquire is "level" or "integrated".*got \'raw\''),
+        ("iq", 'acquire is "level" or "integrated".*got \'iq\''),
         (1, "got 1"),
     ],
 )

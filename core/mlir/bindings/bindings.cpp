@@ -225,19 +225,19 @@ struct NotSupportedYet : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-/// Refuse a readout whose mode the exports do not support yet: only iq (a
-/// level) and integrated (an IQ point).
+/// Refuse a readout whose mode the exports do not support yet: only level
+/// and integrated (an IQ point).
 inline void requireExportedMode(mlir::Operation *op) {
   if (auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op);
-      readout && readout.getMode() != pulse::ReadoutMode::IQ &&
+      readout && readout.getMode() != pulse::ReadoutMode::Level &&
       readout.getMode() != pulse::ReadoutMode::Integrated) [[unlikely]]
     throw NotSupportedYet(
         "readout mode " + pulse::stringifyReadoutMode(readout.getMode()).str() +
-        " is not supported by the exports yet; only iq and integrated are");
+        " is not supported by the exports yet; only level and integrated are");
 }
 
-/// What a readout event's `acquire` key says, empty for a level (iq), which
-/// the exports leave out.
+/// What a readout event's `acquire` key says, empty for a level, which the
+/// exports leave out.
 inline llvm::StringRef exportedAcquire(mlir::Operation *op) {
   auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op);
   return readout && readout.getMode() == pulse::ReadoutMode::Integrated
@@ -6645,7 +6645,7 @@ public:
         // level (acquire="integrated").
         if (plen != 7)
           requirePayload(6);
-        auto mode = pulse::ReadoutMode::IQ;
+        auto mode = pulse::ReadoutMode::Level;
         if (plen == 7) {
           auto given = pulse::symbolizeReadoutMode(static_cast<uint32_t>(p[6]));
           if (!given || *given != pulse::ReadoutMode::Integrated)

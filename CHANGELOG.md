@@ -36,11 +36,11 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
   from the dispersive readout model at the level the shot observed (with
   `shots_count`); the readout projects the qudit as a level readout does,
   and `readout="model"` adds no assignment errors to it. The IR keeps the
-  mode on `pulse.readout` (the new `integrated`; a level stays `iq`), the
-  exports (`/1`, `/2`, `unroll`) give such a readout `"acquire":
-  "integrated"`, and a controller acquires points only with the new
+  mode on `pulse.readout` (`level`, or the new `integrated`), the exports
+  (`/1`, `/2`, `unroll`) give such a readout `"acquire": "integrated"`,
+  and a controller acquires points only with the new
   `Capability.ACQUIRE_INTEGRATED`. Programs that read out only levels
-  compile to the same IR and exports, byte for byte.
+  export as before, byte for byte.
 - **Unit warnings.** `pulse.compile(k, unit_warnings=True)` issues a
   `pulse.UnitWarning` at each kernel line that gives a duration, wait,
   `sigma`, DRAG `beta` or flat-top `width` as a bare number (clock cycles:
@@ -141,6 +141,14 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
 
 ### Changed
 
+- **Readout mode `level`.** The `pulse.readout` mode that acquires the
+  level, spelled `iq` until now, is spelled `level`:
+  `pulse.readout %r, %w, %t, level`. IR text that says `iq` no longer
+  parses (`expected one of [level, discriminated, trace, counts,
+  integrated] for readout mode, got: iq`); the generic form and bytecode
+  keep the mode's value, 0. Kernels and controller exports are unchanged,
+  and the exports and the simulator refuse another mode with "only level
+  and integrated are" where they said "only iq is".
 - **Schedule plots look different.** `viz.plot_schedule`, `viz.save_schedule`
   and `timeline()` draw in the style of the documentation's figures: drives
   green, readouts rose, waits hatched grey and classical calls teal (colors

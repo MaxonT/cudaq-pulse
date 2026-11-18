@@ -8,7 +8,7 @@
 
 func.func @branch_on_a_point(%r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pulse.waveform) -> i1 {
   %r1, %t1, %m = pulse.readout %r0, %wf, %t0, integrated : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
-  // expected-error @+1 {{'pulse.is_set' op reads the level of an integrated readout, which acquires an IQ point and no level; read it out with mode iq to branch on its level}}
+  // expected-error @+1 {{'pulse.is_set' op reads the level of an integrated readout, which acquires an IQ point and no level; read it out with mode level to branch on its level}}
   %c = pulse.is_set %m : !pulse.measurement -> i1
   return %c : i1
 }
@@ -27,7 +27,7 @@ func.func @level_of_a_point(%r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pu
 // One arm of an if reads out a point.
 func.func @a_point_in_one_arm(%b: i1, %r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pulse.waveform) -> i1 {
   %m = scf.if %b -> (!pulse.measurement) {
-    %r1, %t1, %m1 = pulse.readout %r0, %wf, %t0, iq : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
+    %r1, %t1, %m1 = pulse.readout %r0, %wf, %t0, level : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
     scf.yield %m1 : !pulse.measurement
   } else {
     %r1, %t1, %m1 = pulse.readout %r0, %wf, %t0, integrated : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
@@ -42,7 +42,7 @@ func.func @a_point_in_one_arm(%b: i1, %r0: !pulse.readout_line, %t0: !pulse.tone
 
 // A loop carries the last iteration's point.
 func.func @carried_by_a_loop(%r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pulse.waveform) -> i1 {
-  %r1, %t1, %m0 = pulse.readout %r0, %wf, %t0, iq : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
+  %r1, %t1, %m0 = pulse.readout %r0, %wf, %t0, level : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
   %lb = arith.constant 0 : index
   %ub = arith.constant 4 : index
   %step = arith.constant 1 : index
@@ -77,7 +77,7 @@ func.func @sent(%r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pulse.waveform
   %r1, %t1, %m = pulse.readout %r0, %wf, %t0, integrated : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
   %l0 = classical.get_link {device = 0 : i64} : !classical.link
   %l1, %h = classical.submit %l0, @fit(%m) : (!pulse.measurement) -> (!classical.link, !classical.future)
-  // expected-error @+1 {{'classical.submit' op sends value 0 as bits:1, the level of a readout, but it comes from an integrated readout, which acquires an IQ point and no level; read it out with mode iq, or pass it as an iq argument}}
+  // expected-error @+1 {{'classical.submit' op sends value 0 as bits:1, the level of a readout, but it comes from an integrated readout, which acquires an IQ point and no level; read it out with mode level, or pass it as an iq argument}}
   %l2, %h2 = classical.submit %l1, @decide(%m) : (!pulse.measurement) -> (!classical.link, !classical.future)
   return
 }

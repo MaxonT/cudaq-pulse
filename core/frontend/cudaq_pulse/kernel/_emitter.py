@@ -898,7 +898,7 @@ _ACQUIRE_MODES = ("level", "integrated")
 
 def _acquire_mode(value: Any) -> str | None:
     """The mode ``readout(..., acquire=value)`` emits, None for a level (the
-    default, which the IR writes as it always has)."""
+    default, which the packed IR leaves implicit)."""
     if isinstance(value, str) and value in _ACQUIRE_MODES:
         return None if value == "level" else str(value)
     later = " (trace and counts are not supported yet)" if value in ("trace", "counts") else ""

@@ -310,7 +310,7 @@ public:
             << next << " as " << mlir::cast<mlir::StringAttr>(entry).getValue()
             << ", the level of a readout, but it comes from an integrated "
                "readout, which acquires an IQ point and no level; read it out "
-               "with mode iq, or pass it as an iq argument";
+               "with mode level, or pass it as an iq argument";
         hadError = true;
         return;
       }
@@ -432,7 +432,7 @@ private:
     if (isIntegrated(wrong))
       op->emitOpError("reads the level of an integrated readout, which "
                       "acquires an IQ point and no level; read it out with "
-                      "mode iq to branch on its level");
+                      "mode level to branch on its level");
     else
       op->emitOpError("measurement must be produced by pulse.readout, got ")
           << wrong->getName();

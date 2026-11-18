@@ -103,7 +103,7 @@ def IQDataType : PulseType<"IQData", "iq_data"> {
 //===----------------------------------------------------------------------===//
 
 def ReadoutMode : I32Enum<"ReadoutMode", "readout mode", [
-    I32EnumCase<"IQ", 0, "iq">,
+    I32EnumCase<"Level", 0, "level">,
     I32EnumCase<"Discriminated", 1, "discriminated">,
     I32EnumCase<"Trace", 2, "trace">,
     I32EnumCase<"Counts", 3, "counts">,
