@@ -195,11 +195,13 @@ The helpers read the components without compiling anything:
 
 .. code-block:: python
 
+   import math
+
    qs = pulse.quantum_system("transmon_surface17")
    x2, d4 = qs.qudit("X2"), qs.qudit("D4")
    data = qs.physical_qudits[d4.index]
    data.frequency_at(0.0)                    # 3.878e9: the idle point
-   assert data.frequency_at(-0.3) == data.frequency_at(0.3)   # even about the sweet spot
+   assert math.isclose(data.frequency_at(-0.3), data.frequency_at(0.3))   # even about the sweet spot
    at = data.amplitude_for(5.276e9)          # -0.3015 flux quanta to the CZ's frequency
    point = qs.coupling(x2, d4).at(at, side=d4)
    print(point.frequencies_hz[d4.index], point.exchange_hz)
