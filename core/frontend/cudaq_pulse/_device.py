@@ -388,6 +388,14 @@ class QuantumSystem:
                     f"QuantumSystem control_system must be a ControlSystem, got {control_system!r}"
                 )
         problems: list[Problem] = []
+        if (
+            clock_ghz is not None
+            and clock_ghz.__class__ is not float
+            and clock_ghz.__class__ is not int
+        ):
+            from ._units import as_ghz
+
+            clock_ghz = as_ghz(clock_ghz, "clock_ghz")
         if clock_ghz is not None or (control_system is not None and control_system._needs_clock):
             from ._clocks import _program_clock
 
@@ -1190,6 +1198,14 @@ def quantum_system(
     Arguments with problems raise ``QuantumSystemDefinitionError`` listing all of
     them, each at the argument it is in.
     """
+    if (
+        clock_ghz is not None
+        and clock_ghz.__class__ is not float
+        and clock_ghz.__class__ is not int
+    ):
+        from ._units import as_ghz
+
+        clock_ghz = as_ghz(clock_ghz, "clock_ghz")
     if qudits is not None:
         if name.__class__ is not str:
             _not_a_name(name)

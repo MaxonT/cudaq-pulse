@@ -54,10 +54,10 @@ pulse:
 
    qudit_0 = PhysicalQudit(
        index=0,
-       frequency_hz=5.1e9,
+       frequency_hz=5.1 * pulse.ghz,
        t1_us=60.0,
        t2_star_us=40.0,
-       anharmonicity_hz=-2.2e8,
+       anharmonicity_hz=-220 * pulse.mhz,
        calibrations=x_pulse,
    )
 
@@ -67,10 +67,10 @@ The second qudit sits 200 MHz higher, with shorter coherence times:
 
    qudit_1 = PhysicalQudit(
        index=1,
-       frequency_hz=5.3e9,
+       frequency_hz=5.3 * pulse.ghz,
        t1_us=45.0,
        t2_star_us=30.0,
-       anharmonicity_hz=-2.1e8,
+       anharmonicity_hz=-210 * pulse.mhz,
        calibrations=x_pulse,
    )
 
@@ -81,7 +81,7 @@ Build the pair with a 3 MHz coupling between them:
    pair = pulse.quantum_system(
        name="my_pair",
        qudits={0: qudit_0, 1: qudit_1},
-       couplings=[Coupling((0, 1), strength_hz=3.0e6)],
+       couplings=[Coupling((0, 1), strength_hz=3 * pulse.mhz)],
    )
    print(pair)
 

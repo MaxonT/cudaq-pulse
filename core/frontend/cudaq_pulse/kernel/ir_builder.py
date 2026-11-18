@@ -520,6 +520,10 @@ class PythonIRBuilder:
         else:
             results = tuple([IRValue(vid + i, rt) for i, rt in enumerate(result_types)])
         self._next_id = vid + count
+        if attrs and "freq_hz" in attrs and attrs["freq_hz"].__class__ not in (int, float):
+            from ._durations import in_hz
+
+            attrs["freq_hz"] = in_hz(kind.removeprefix("pulse."), attrs["freq_hz"])
         if attrs and kind.removeprefix("pulse.") in _TIMED_OPS:
             from ._durations import in_program_cycles
 

@@ -238,6 +238,10 @@ class Calibration:
     ) -> float:
         """The 0-1 exchange J_qq of *pair* with its qubits at these 0-1
         frequencies; at their idle points by default."""
+        from .base import _hz
+
+        auxiliary_hz = _hz(auxiliary_hz, "auxiliary_hz")
+        data_hz = _hz(data_hz, "data_hz")
         auxiliary, data = pair.split("-")
         coupled = self.pair(pair)
         flux_a = (
@@ -265,6 +269,9 @@ class Calibration:
     def flux_for_detuning(self, qudit: str, detuning_hz: float) -> float:
         """The flux (flux quanta, in [0, 1/2]) that detunes *qudit* by
         *detuning_hz* from its idle point."""
+        from .base import _hz
+
+        detuning_hz = _hz(detuning_hz, "detuning_hz")
         circuit = self.circuit(qudit)
         return circuit.flux_for_f01(circuit.f01_hz(self.idle_flux(qudit)) + detuning_hz)
 

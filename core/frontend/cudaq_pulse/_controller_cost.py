@@ -14,7 +14,8 @@ program compiles (``range`` of a constant, or a fixed-size argument), no
 mutable state or calls it cannot follow. A helper with a
 ``controller_cost`` attribute (a function of its arguments' lengths giving
 its ``OpCounts``) is an intrinsic, counted by it instead of its body.
-Converting a time argument to ns (``as_nanoseconds``) costs nothing. See
+Converting a time argument to ns (``as_nanoseconds``) or a frequency to Hz
+(``as_hz``) costs nothing. See
 ``cudaq_pulse.controller``.
 
 The reports built from these costs (``usage``, ``Processor.usage``) are
@@ -42,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 import cudaq_pulse.controller  # noqa: F401
 
 from ._errors import InvalidTypeError
-from ._units import as_nanoseconds
+from ._units import as_hz, as_nanoseconds
 
 # The typed tables load where a function is first costed: a report on a
 # program without classical functions never builds one.
@@ -588,9 +589,9 @@ class _Walker:
             self.flag(node, f"a call of {ast.unparse(node.func)}")
             return cost
         name = getattr(target, "__name__", "")
-        if target is as_nanoseconds:
-            # A time converts to its ns where Python calls the function; on a
-            # controller the argument is a number already.
+        if target is as_nanoseconds or target is as_hz:
+            # A time converts to its ns, a frequency to its Hz, where Python
+            # calls the function; on a controller the argument is a number already.
             return cost
         intrinsic = getattr(target, "controller_cost", None)
         if callable(intrinsic):

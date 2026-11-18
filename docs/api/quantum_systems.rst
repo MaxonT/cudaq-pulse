@@ -30,10 +30,20 @@ rounds a length to whole timesteps in a kernel.
    :members:
    :undoc-members:
 
-Times with units
-----------------
+.. _units:
 
-A bare int duration is a number of cycles of the program clock.
+Units
+-----
+
+Times and frequencies take units: ``20 * pulse.ns``, ``5 * pulse.ghz``.
+A unit times a number (either way round, ``pulse.ghz * 5``) is a quantity of
+that kind, and arithmetic keeps the kind where it means one: a time plus a
+time, a frequency times a number, a frequency over a frequency (a number), a
+time times a frequency (a number of cycles). Mixing kinds otherwise, or
+passing a time where a frequency goes or a frequency where a time goes, is a
+``TypeError`` that says what to write.
+
+**Times.** A bare int duration is a number of cycles of the program clock.
 ``20 * pulse.ns`` is a time: the compiler converts it to cycles exactly,
 for the quantum system the kernel compiles for, and rejects a time that is not a
 whole number of cycles. A plain float in a duration is an error, since it
@@ -53,6 +63,33 @@ One nanosecond, microsecond, millisecond and second:
    :no-value:
 
 .. autodata:: cudaq_pulse.s
+   :no-value:
+
+**Frequencies.** Every parameter that takes a frequency, in a kernel
+(``set_frequency``, ``shift_frequency``) or on the host (a qudit's
+``frequency_hz``, a coupling's ``strength_hz``, the calibration helpers'
+``mean_hz``), takes a frequency with units or a bare number, which is in
+Hz (:doc:`../user_guide/conventions`). A unit scales the digits written, so
+``5.1234 * pulse.ghz`` is ``5.1234e9`` bit for bit, and a program written
+either way compiles to the same bytes. A clock or sample rate
+(``clock_ghz``, ``sample_rate_ghz``, ``reference_clock_ghz``) takes a bare
+number in GHz, as its name says, or a frequency in any unit:
+``Controller(clock_ghz=500 * pulse.mhz)`` is ``clock_ghz=0.5``.
+
+.. autoclass:: cudaq_pulse.Frequency
+
+One hertz, kilohertz, megahertz and gigahertz:
+
+.. autodata:: cudaq_pulse.hz
+   :no-value:
+
+.. autodata:: cudaq_pulse.khz
+   :no-value:
+
+.. autodata:: cudaq_pulse.mhz
+   :no-value:
+
+.. autodata:: cudaq_pulse.ghz
    :no-value:
 
 Errors are on :doc:`errors`; what a quantum system is built from is on

@@ -21,7 +21,7 @@ import operator
 from collections.abc import Mapping
 from typing import Any
 
-from .._units import Time, UnitError, in_cycles
+from .._units import Frequency, Time, UnitError, in_cycles
 from .ir_builder import (
     MAX_CYCLES,
     CompilationError,
@@ -191,9 +191,51 @@ def _whole(bounds: tuple[Any, ...] | list[Any]) -> bool:
     return True
 
 
+def in_hz(fname: str, value: Any) -> Any:
+    """*value*, the frequency of a *fname* call, in Hz: a ``Frequency`` (also
+    inside an expression of the program's values) as its float of hertz, a
+    bare number as it is; a time raises."""
+    cls = value.__class__
+    if cls is Frequency:
+        return float(value)
+    if cls is Time or (cls is ParameterExpression and _has(value, Time)):
+        raise UnitError(
+            f"{fname}(): the frequency {arithmetic_text(value) if cls is not Time else value} "
+            "is a time; give a frequency, in Hz or with units, as "
+            f"{fname}(tone, 5e9) or {fname}(tone, 5 * pulse.ghz)"
+        )
+    if cls is ParameterExpression and _has(value, Frequency):
+        return _plain(value)
+    return value
+
+
+def _has(value: Any, cls: type) -> bool:
+    if value.__class__ is cls:
+        return True
+    if value.__class__ is ParameterExpression:
+        return _has(value.lhs, cls) or _has(value.rhs, cls)
+    return False
+
+
+def _plain(value: Any) -> Any:
+    if value.__class__ is Frequency:
+        return float(value)
+    if value.__class__ is ParameterExpression:
+        return ParameterExpression(
+            value.op, _plain(value.lhs), _plain(value.rhs), dtype=value.dtype
+        )
+    return value
+
+
 def cycles(fname: str, what: str, value: Any, whole: bool, call: str, clock_ghz: float) -> Any:
     """*value*, the *what* of a *fname* call, in program cycles."""
     cls = value.__class__
+    if cls is Frequency or (cls is ParameterExpression and _has(value, Frequency)):
+        raise UnitError(
+            f"{fname}(): {what} {arithmetic_text(value) if cls is not Frequency else value} "
+            f"is a frequency; a {what} is an int number of cycles or a time, as "
+            + (call.format("20 * pulse.ns") or "20 * pulse.ns")
+        )
     if cls is Time:
         numerator, denominator = in_cycles(value, clock_ghz)
         if not whole:
@@ -422,6 +464,9 @@ def samples_made_for(
     which must be the lines' *line_rate*. ``None`` for one per cycle."""
     made = (1, 1)
     if sample_rate_ghz is not None:
+        from .._units import as_ghz
+
+        sample_rate_ghz = as_ghz(sample_rate_ghz, "custom_samples(): sample_rate_ghz")
         try:
             from .. import _clocks
 

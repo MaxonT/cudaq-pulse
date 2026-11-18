@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .._errors import InvalidValueError
-from .._units import Time, as_nanoseconds
+from .._units import Frequency, Time, as_hz, as_nanoseconds
 
 if TYPE_CHECKING:
     from .._op_tables import OpCounts
@@ -89,7 +89,7 @@ def t1_update(
     """
     if alpha <= 0 or beta <= 0:
         raise InvalidValueError(f"alpha and beta must be positive, got {alpha}, {beta}")
-    t = max(float(wait_ns), 0.0)
+    t = max(float(as_nanoseconds(wait_ns)), 0.0)
     if survived:
         return alpha, beta + t
     if t == 0.0:
@@ -116,7 +116,11 @@ def t1_wait(alpha: float, beta: float, scale: float = 1.0) -> float:
 
 
 def frequency_update(
-    mean_hz: float, sigma_hz: float, outcome: int, wait_ns: float | Time, phase: float
+    mean_hz: float | Frequency,
+    sigma_hz: float | Frequency,
+    outcome: int,
+    wait_ns: float | Time,
+    phase: float,
 ) -> tuple[float, float]:
     """The Gaussian posterior over a detuning after one Ramsey shot.
 
@@ -126,6 +130,8 @@ def frequency_update(
     for detuning D. The posterior is the Gaussian with the exact mean and
     variance of prior times likelihood.
     """
+    mean_hz = as_hz(mean_hz, "mean_hz")
+    sigma_hz = as_hz(sigma_hz, "sigma_hz")
     if sigma_hz <= 0:
         raise InvalidValueError(f"sigma_hz must be positive, got {sigma_hz}")
     wait_ns = as_nanoseconds(wait_ns)
@@ -154,8 +160,8 @@ def frequency_update(
 
 
 def ramsey_setting(
-    mean_hz: float,
-    sigma_hz: float,
+    mean_hz: float | Frequency,
+    sigma_hz: float | Frequency,
     scale: float = 0.1,
     max_wait_ns: float | Time | None = None,
 ) -> tuple[float, float]:
@@ -172,6 +178,8 @@ def ramsey_setting(
     or a number of ns); once it binds, every shot still narrows the
     posterior, more slowly.
     """
+    mean_hz = as_hz(mean_hz, "mean_hz")
+    sigma_hz = as_hz(sigma_hz, "sigma_hz")
     max_wait_ns = as_nanoseconds(max_wait_ns)
     wait_ns = scale * 1e9 / sigma_hz
     if max_wait_ns is not None:
@@ -188,14 +196,18 @@ def survival_probability(wait_ns: float | Time, t1_us: float) -> float:
     *wait_ns* (a time, or a number of ns): exp(-wait / T1), the likelihood
     ``t1_update`` uses. A T1 of 0 is no decay."""
     t1_ns = t1_us * 1e3
-    return math.exp(-float(wait_ns) / t1_ns) if t1_ns > 0 else 1.0
+    return math.exp(-float(as_nanoseconds(wait_ns)) / t1_ns) if t1_ns > 0 else 1.0
 
 
-def ramsey_probability(wait_ns: float | Time, phase: float, detuning_hz: float) -> float:
+def ramsey_probability(
+    wait_ns: float | Time, phase: float, detuning_hz: float | Frequency
+) -> float:
     """P(1) of a Ramsey shot that waits *wait_ns* (a time, or a number of
     ns) between two pi/2 pulses, the second advanced by *phase*, on a qudit
     *detuning_hz* off the drive: (1 - cos(2 pi D t + phase)) / 2, the
     likelihood ``frequency_update`` uses. Ideal pulses, no decay."""
+    detuning_hz = as_hz(detuning_hz, "detuning_hz")
+    wait_ns = as_nanoseconds(wait_ns)
     return 0.5 * (1 - math.cos(math.tau * detuning_hz * float(wait_ns) * 1e-9 + phase))
 
 
@@ -613,8 +625,8 @@ def adaptive_t1_wait(shape: float, rate: float, scale: float = 0.51) -> float:
 
 
 def binary_search_update(
-    mean_hz: float,
-    sigma_hz: float,
+    mean_hz: float | Frequency,
+    sigma_hz: float | Frequency,
     outcome: int,
     wait_ns: float | Time,
     offset: float = -0.02,
@@ -631,6 +643,8 @@ def binary_search_update(
     is the Gaussian of its exact moments (Berritta et al. 2025); a +1 moves
     the estimate up. The wait and T are times, or numbers of ns.
     """
+    mean_hz = as_hz(mean_hz, "mean_hz")
+    sigma_hz = as_hz(sigma_hz, "sigma_hz")
     wait_ns = as_nanoseconds(wait_ns)
     coherence_ns = as_nanoseconds(coherence_ns)
     t = wait_ns * 1e-9
@@ -643,10 +657,11 @@ def binary_search_update(
     return mean, math.sqrt(variance)
 
 
-def binary_search_wait(sigma_hz: float, coherence_ns: float | Time = 10_000.0) -> float:
+def binary_search_wait(sigma_hz: float | Frequency, coherence_ns: float | Time = 10_000.0) -> float:
     """The wait (ns) of the next binary-search shot, from the posterior
     width: ``(sqrt(16 pi^2 s^2 + 1/T^2) - 1/T) / (8 pi^2 s^2)``, for T a
     time or a number of ns."""
+    sigma_hz = as_hz(sigma_hz, "sigma_hz")
     coherence_ns = as_nanoseconds(coherence_ns)
     variance = sigma_hz * sigma_hz
     inverse_t = 1e9 / coherence_ns
@@ -655,12 +670,13 @@ def binary_search_wait(sigma_hz: float, coherence_ns: float | Time = 10_000.0) -
     return wait_s * 1e9
 
 
-def binary_search_phase(mean_hz: float, wait_ns: float | Time) -> float:
+def binary_search_phase(mean_hz: float | Frequency, wait_ns: float | Time) -> float:
     """The phase of a Ramsey shot (as for ``frequency_update``: it reports 1
     with probability (1 - cos(2 pi D t + phase)) / 2) that puts the estimate
     *mean_hz* on the fringe's steepest point, so that a detuning above it
     makes 1 more likely: the Ramsey of detuning 1 / (4 t) + mean. The wait
     is a time, or a number of ns."""
+    mean_hz = as_hz(mean_hz, "mean_hz")
     wait_ns = as_nanoseconds(wait_ns)
     turn = 2.0 * math.pi
     return (0.5 * math.pi - turn * mean_hz * wait_ns * 1e-9) % turn
@@ -742,12 +758,13 @@ def pi_train_amplitude(amplitude: float, theta: float, turns: int) -> float:
     return amplitude * target / (target + theta)
 
 
-def ramsey_detuning(mean_hz: float, theta: float, wait_ns: float | Time) -> float:
+def ramsey_detuning(mean_hz: float | Frequency, theta: float, wait_ns: float | Time) -> float:
     """The detuning from the sparse phase estimate *theta* of Ramsey shots
     of wait *wait_ns* at phases phi0 - pi/2, phi0 and phi0 + pi/2, with
     phi0 = -2 pi mean t (the convention of ``frequency_update``: P(1) =
     (1 - cos(2 pi D t + phase)) / 2): D = mean + (theta - pi) / (2 pi t),
     the phase taken in (-pi, pi]. The wait is a time, or a number of ns."""
+    mean_hz = as_hz(mean_hz, "mean_hz")
     wait_ns = as_nanoseconds(wait_ns)
     error = theta - math.pi
     if error <= -math.pi:

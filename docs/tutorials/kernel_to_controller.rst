@@ -34,10 +34,10 @@ nanosecond:
 
    qudit = PhysicalQudit(
        index=0,
-       frequency_hz=5.0e9,
+       frequency_hz=5 * pulse.ghz,
        t1_us=50.0,
        t2_star_us=30.0,
-       anharmonicity_hz=-2.0e8,
+       anharmonicity_hz=-200 * pulse.mhz,
    )
    system = pulse.quantum_system(
        name="one-qubit",

@@ -84,11 +84,11 @@ def sideband_modulation(qudit):
     """
     drive_line = get_drive_line(qudit)
 
-    set_frequency(drive_line.tone, 5.0e9)
+    set_frequency(drive_line.tone, 5 * pulse.ghz)
     drive(drive_line, gaussian(cal["x_duration"], 0.25, cal["x_sigma"]))
     wait(drive_line, cal["park_wait"])
 
-    set_frequency(drive_line.tone, 5.15e9)
+    set_frequency(drive_line.tone, 5.15 * pulse.ghz)
     drive(drive_line, gaussian(cal["x_duration"], 0.25, cal["x_sigma"]))
 
 

@@ -137,6 +137,16 @@ def test_frequencies_are_in_hz():
 
     assert [e["frequency_hz"] for e in _drives(_export(k))] == [5.1e9, 5.102e9]
 
+    @pulse.kernel
+    def with_units(q):
+        d = get_drive_line(q)
+        set_frequency(d.tone, 5.1 * pulse.ghz)
+        drive(d, square(8, 0.1))
+        shift_frequency(d.tone, 2e6)
+        drive(d, square(8, 0.1))
+
+    assert _export(with_units)["events"] == _export(k)["events"]
+
     # A transmon's 1-2 transition is at frequency_hz + anharmonicity_hz (< 0),
     # and turns sqrt(2) faster.
     qs = _system(anharmonicity_hz=-200e6)

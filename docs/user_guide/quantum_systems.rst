@@ -47,10 +47,10 @@ g (a^dagger b + a b^dagger):
    qpu = pulse.quantum_system(
        name="pair",
        qudits={
-           i: PhysicalQudit(i, f, 50.0, 30.0, anharmonicity_hz=-2.0e8)
-           for i, f in enumerate([4.8e9, 6.9e9])
+           i: PhysicalQudit(i, f, 50.0, 30.0, anharmonicity_hz=-200 * pulse.mhz)
+           for i, f in enumerate([4.8 * pulse.ghz, 6.9 * pulse.ghz])
        },
-       couplings=[Coupling((0, 1), strength_hz=5.7e6, calibrations={pulse.gates.CZ: cz})],
+       couplings=[Coupling((0, 1), strength_hz=5.7 * pulse.mhz, calibrations={pulse.gates.CZ: cz})],
    )
 
 A ``PhysicalQudit`` takes its index, 0-1 frequency (Hz), T1 and T2* (us) in

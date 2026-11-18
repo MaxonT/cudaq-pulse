@@ -29,6 +29,7 @@ from .._errors import (
     UnsupportedError,
     _count,
 )
+from .._units import Frequency, as_bare_time, as_ghz, as_hz
 from .models import SimulationModel, TransmonModel
 
 if TYPE_CHECKING:
@@ -49,6 +50,29 @@ _TRANSMON = TransmonModel()
 if TYPE_CHECKING:
     _EMPTY: Mapping[Any, Any]
 _EMPTY = MappingProxyType({})
+
+
+def _hz(value: Any, what: str) -> Any:
+    """*value*, a field *what* in Hz: a ``Frequency`` as its float of hertz."""
+    cls = value.__class__
+    if cls is float or cls is int or value is None:
+        return value
+    return as_hz(value, what)
+
+
+def _times(owner: str, unit: str, **values: Any) -> None:
+    """Refuse a ``Frequency`` among *values*, fields of *owner* that are times
+    as bare numbers of *unit*."""
+    for name, value in values.items():
+        as_bare_time(value, f"{owner}.{name}", unit)
+
+
+def _ghz(value: Any, what: str) -> Any:
+    """*value*, a field *what* in GHz: a ``Frequency`` in GHz."""
+    cls = value.__class__
+    if cls is float or cls is int:
+        return value
+    return as_ghz(value, what)
 
 
 class _Field(int):
@@ -177,13 +201,15 @@ class DispersiveReadout(Readout):
         error_0to1: float = 0.0,
         depletion_ns: float | None = None,
     ) -> None:
+        if depletion_ns.__class__ is Frequency:
+            _times("DispersiveReadout", "ns", depletion_ns=depletion_ns)
         object.__setattr__(
             self,
             "_values",
             (
-                frequency_hz,
-                dispersive_shift_hz,
-                linewidth_hz,
+                _hz(frequency_hz, "frequency_hz"),
+                _hz(dispersive_shift_hz, "dispersive_shift_hz"),
+                _hz(linewidth_hz, "linewidth_hz"),
                 efficiency,
                 error_1to0,
                 error_0to1,
@@ -300,6 +326,12 @@ class DragPulse(_Component):
         beta_ns: float = 0.0,
         phase_rad: float = 0.0,
     ) -> None:
+        if (
+            duration_ns.__class__ is Frequency
+            or sigma_ns.__class__ is Frequency
+            or beta_ns.__class__ is Frequency
+        ):
+            _times("DragPulse", "ns", duration_ns=duration_ns, sigma_ns=sigma_ns, beta_ns=beta_ns)
         object.__setattr__(self, "_values", (duration_ns, sigma_ns, amplitude, beta_ns, phase_rad))
 
     if TYPE_CHECKING:
@@ -388,6 +420,18 @@ class ReadoutPulse(_Component):
         integration_ns: float | None = None,
         photon_number: float = 4.0,
     ) -> None:
+        if (
+            duration_ns.__class__ is Frequency
+            or sigma_ns.__class__ is Frequency
+            or integration_ns.__class__ is Frequency
+        ):
+            _times(
+                "ReadoutPulse",
+                "ns",
+                duration_ns=duration_ns,
+                sigma_ns=sigma_ns,
+                integration_ns=integration_ns,
+            )
         object.__setattr__(
             self, "_values", (duration_ns, amplitude, sigma_ns, integration_ns, photon_number)
         )
@@ -441,7 +485,13 @@ class FluxCZ(_Component):
         buffer_ns: float | None = None,
         interaction_frequency_hz: float | None = None,
     ) -> None:
-        object.__setattr__(self, "_values", (duration_ns, buffer_ns, interaction_frequency_hz))
+        if duration_ns.__class__ is Frequency or buffer_ns.__class__ is Frequency:
+            _times("FluxCZ", "ns", duration_ns=duration_ns, buffer_ns=buffer_ns)
+        object.__setattr__(
+            self,
+            "_values",
+            (duration_ns, buffer_ns, _hz(interaction_frequency_hz, "interaction_frequency_hz")),
+        )
 
     if TYPE_CHECKING:
 
@@ -786,6 +836,17 @@ class PhysicalQudit(_QuditFields):
             calibrations = _calibrations(calibrations, f"qudit {index}", _QUDIT_GATES)
         if metadata is not _EMPTY:
             metadata = _metadata(metadata, index)
+        # A frequency in Hz may come with units; a time in us may not.
+        if frequency_hz.__class__ is not float:
+            frequency_hz = _hz(frequency_hz, "frequency_hz")
+        if anharmonicity_hz is not None and anharmonicity_hz.__class__ is not float:
+            anharmonicity_hz = _hz(anharmonicity_hz, "anharmonicity_hz")
+        if (
+            t1_us.__class__ is Frequency
+            or t2_star_us.__class__ is Frequency
+            or t2_echo_us.__class__ is Frequency
+        ):
+            _times("PhysicalQudit", "us", t1_us=t1_us, t2_star_us=t2_star_us, t2_echo_us=t2_echo_us)
         cls = self.__class__
         object.__setattr__(self, "__class__", _QuditFields)
         self.index = index
@@ -961,7 +1022,7 @@ class Coupling:
             )
         set_ = object.__setattr__
         set_(self, "qudits", qudits)
-        set_(self, "strength_hz", strength_hz)
+        set_(self, "strength_hz", _hz(strength_hz, "strength_hz"))
         set_(self, "_calibrations", calibrations)
 
     def __setattr__(self, name: str, value: Any) -> NoReturn:
@@ -1047,6 +1108,7 @@ class ResidualZZ:
         qudits = self.qudits
         if qudits.__class__ is not tuple and isinstance(qudits, Sequence):
             object.__setattr__(self, "qudits", tuple(qudits))
+        object.__setattr__(self, "rate_hz", _hz(self.rate_hz, "rate_hz"))
 
 
 # The operator a coupling stands for, by the simulation model of its system:
@@ -1115,6 +1177,7 @@ class _Description:
         attribution: str = "",
         clock_ghz: float = 2.0,
     ) -> None:
+        clock_ghz = _ghz(clock_ghz, "clock_ghz")
         if not clock_ghz > 0:
             raise InvalidValueError(f"clock_ghz must be positive, got {clock_ghz}")
         if isinstance(model, type) and issubclass(model, SimulationModel):

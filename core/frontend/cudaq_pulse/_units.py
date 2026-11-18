@@ -23,14 +23,14 @@ import math
 import numbers
 import sys
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 from ._errors import InvalidValueError
 
 if TYPE_CHECKING:
     from fractions import Fraction
 
-__all__ = ["Time", "ns", "us", "ms", "s"]
+__all__ = ["Frequency", "Time", "ghz", "hz", "khz", "mhz", "ms", "ns", "s", "us"]
 
 
 def _exact(value: Any) -> tuple[int, int]:
@@ -71,7 +71,7 @@ def _is_number(value: Any) -> bool:
     cls = value.__class__
     if cls is int or cls is float:
         return True
-    return isinstance(value, numbers.Real) and not isinstance(value, (bool, Time))
+    return isinstance(value, numbers.Real) and not isinstance(value, (bool, Time, Frequency))
 
 
 class UnitError(TypeError):
@@ -102,6 +102,8 @@ class Time(float):
     _d: int
 
     def __new__(cls, nanoseconds: Fraction | int | float) -> Time:
+        if nanoseconds.__class__ is Frequency:
+            raise _not_a_time(nanoseconds)
         numerator, denominator = _exact(nanoseconds)
         return _make(numerator, denominator, cls)
 
@@ -136,9 +138,18 @@ class Time(float):
 
     # ── Arithmetic that keeps the unit ──────────────────────────────────
 
-    def __mul__(self, other: Any) -> Time:
+    # A time times a number is a time, and times a frequency a number: Any,
+    # as a frequency is also a float, which the second signature takes.
+    @overload
+    def __mul__(self, other: Frequency) -> Any: ...
+    @overload
+    def __mul__(self, other: Any) -> Time: ...
+    def __mul__(self, other: Any) -> Any:
         if other.__class__ is Time:
             raise UnitError(f"{self} * {other} is a time times a time, which is not a time")
+        if other.__class__ is Frequency:
+            # Cycles of the frequency in the time: a plain number.
+            return (self._n * other._n) / (self._d * other._d * 10**9)
         if _is_number(other):
             n, d = _exact(other)
             a, b = self._n, self._d
@@ -148,7 +159,7 @@ class Time(float):
 
     # Not an alias of __mul__: editors would type 100 * pulse.ns as float.
     def __rmul__(self, other: Any) -> Time:
-        return self.__mul__(other)
+        return self.__mul__(other)  # type: ignore[no-any-return]
 
     def __truediv__(self, other: Any) -> Any:
         if other.__class__ is Time:
@@ -317,11 +328,280 @@ def _mixed(left: Any, op: str, right: Any) -> UnitError:
     )
 
 
+class Frequency(float):
+    """A frequency: a float of hertz holding its exact value.
+
+    Made by multiplying a unit, ``5 * pulse.ghz`` or ``pulse.mhz * 250``;
+    every parameter that takes a frequency takes it, and a bare number
+    there is a number of hertz, so ``5 * pulse.ghz`` and ``5e9`` are the
+    same frequency, bit for bit: a unit scales the decimal digits written,
+    as ``5.1234e9`` reads them, rather than multiplying floats.
+
+    ``float(f)`` is the frequency in Hz. A frequency adds to and compares
+    with frequencies and with bare numbers of hertz, and never with a time;
+    a time times a frequency is a plain number (cycles of it), and a
+    frequency times a frequency is an error.
+    """
+
+    __slots__ = ("_n", "_d")
+    _n: int
+    _d: int
+
+    def __new__(cls, hertz: Fraction | int | float) -> Frequency:
+        if hertz.__class__ is Time:
+            raise _not_a_frequency("Frequency()", hertz)
+        return _frequency(*_exact(hertz))
+
+    @property
+    def exact_hz(self) -> Fraction:
+        """The frequency in Hz, exactly."""
+        from fractions import Fraction
+
+        return Fraction(self._n, self._d)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_frequency, (self._n, self._d))
+
+    def __copy__(self) -> Frequency:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Frequency:
+        return self
+
+    def __repr__(self) -> str:
+        n, d = self._n, self._d
+        for unit, scale in (("GHz", 10**9), ("MHz", 10**6), ("kHz", 10**3)):
+            if abs(n) >= scale * d:
+                return f"{n / (d * scale):g} {unit}"
+        return f"{n / d:g} Hz"
+
+    __str__ = __repr__
+
+    def __format__(self, spec: str) -> str:
+        return repr(self) if not spec else float.__format__(self, spec)
+
+    def _hz(self, op: str, other: Any) -> tuple[int, int] | None:
+        """*other* as exact hertz, for + - and comparisons: a frequency or a
+        bare number of hertz; raises for a time."""
+        cls = other.__class__
+        if cls is Frequency:
+            return other._n, other._d
+        if cls is Time:
+            raise UnitError(f"{self} {op} {other} mixes a frequency with a time")
+        if _is_number(other):
+            return _exact(other)
+        return None
+
+    def __add__(self, other: Any) -> Frequency:
+        hz = self._hz("+", other)
+        if hz is None:
+            return NotImplemented
+        return _frequency(self._n * hz[1] + hz[0] * self._d, self._d * hz[1])
+
+    __radd__ = __add__
+
+    def __sub__(self, other: Any) -> Frequency:
+        hz = self._hz("-", other)
+        if hz is None:
+            return NotImplemented
+        return _frequency(self._n * hz[1] - hz[0] * self._d, self._d * hz[1])
+
+    def __rsub__(self, other: Any) -> Frequency:
+        hz = self._hz("-", other)
+        if hz is None:
+            return NotImplemented
+        return _frequency(hz[0] * self._d - self._n * hz[1], self._d * hz[1])
+
+    # A frequency times a number is a frequency, and times a time a number.
+    @overload
+    def __mul__(self, other: Time) -> Any: ...
+    @overload
+    def __mul__(self, other: Any) -> Frequency: ...
+    def __mul__(self, other: Any) -> Any:
+        cls = other.__class__
+        if cls is Frequency:
+            raise UnitError(f"{self} * {other} is a frequency times a frequency")
+        if cls is Time:
+            return other.__mul__(self)
+        if _is_number(other):
+            n, d = _exact(other)
+            return _frequency(self._n * n, self._d * d)
+        return NotImplemented
+
+    # Not an alias of __mul__, as for a time: 5 * pulse.ghz is a frequency.
+    # A time on the left multiplies in its own __mul__.
+    def __rmul__(self, other: Any) -> Frequency:
+        if _is_number(other):
+            n, d = _exact(other)
+            return _frequency(self._n * n, self._d * d)
+        return NotImplemented
+
+    def __truediv__(self, other: Any) -> Any:
+        cls = other.__class__
+        if cls is Frequency:
+            if other._n == 0:
+                raise ZeroDivisionError("division by a frequency of 0 Hz")
+            return (self._n * other._d) / (self._d * other._n)
+        if cls is Time:
+            raise UnitError(f"{self} / {other} is a frequency over a time")
+        if _is_number(other):
+            n, d = _exact(other)
+            if n == 0:
+                raise ZeroDivisionError("division of a frequency by 0")
+            return _frequency(self._n * d, self._d * n)
+        return NotImplemented
+
+    def __rtruediv__(self, other: Any) -> Any:
+        if _is_number(other) or other.__class__ is Time:
+            raise UnitError(
+                f"{other!r} / {self} divides by a frequency; for its period write a time "
+                "(1 / (5 * pulse.mhz) is 200 * pulse.ns)"
+            )
+        return NotImplemented
+
+    def __neg__(self) -> Frequency:
+        return _frequency(-self._n, self._d)
+
+    def __pos__(self) -> Frequency:
+        return self
+
+    def __abs__(self) -> Frequency:
+        return _frequency(abs(self._n), self._d)
+
+    def __floordiv__(self, other: Any) -> Any:
+        raise UnitError(f"{self} // {other!r}: divide a frequency with /")
+
+    def __rfloordiv__(self, other: Any) -> Any:
+        raise UnitError(f"{other!r} // {self} divides by a frequency")
+
+    def __mod__(self, other: Any) -> Any:
+        raise UnitError(f"{self} % {other!r}: a frequency has no remainder")
+
+    def __rmod__(self, other: Any) -> Any:
+        raise UnitError(f"{other!r} % {self}: a frequency has no remainder")
+
+    def __pow__(self, other: Any, modulo: Any = None) -> Any:
+        raise UnitError(f"{self} ** {other!r} is not a frequency")
+
+    def __rpow__(self, other: Any, modulo: Any = None) -> Any:
+        raise UnitError(f"{other!r} ** {self} raises to a frequency")
+
+    # Compared with frequencies and numbers of hertz: with a float as floats
+    # compare, so a frequency equals, orders and hashes as its float of
+    # hertz; with a frequency or another number exactly.
+    def _pair(self, op: str, other: Any) -> tuple[int, int] | None:
+        hz = self._hz(op, other)
+        return None if hz is None else (self._n * hz[1], hz[0] * self._d)
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is float:
+            return float.__eq__(self, other)
+        pair = self._pair("==", other)
+        return NotImplemented if pair is None else pair[0] == pair[1]
+
+    def __ne__(self, other: object) -> bool:
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
+    __hash__ = float.__hash__
+
+    def __lt__(self, other: Any) -> bool:
+        if other.__class__ is float:
+            return float.__lt__(self, other)
+        pair = self._pair("<", other)
+        return NotImplemented if pair is None else pair[0] < pair[1]
+
+    def __le__(self, other: Any) -> bool:
+        if other.__class__ is float:
+            return float.__le__(self, other)
+        pair = self._pair("<=", other)
+        return NotImplemented if pair is None else pair[0] <= pair[1]
+
+    def __gt__(self, other: Any) -> bool:
+        if other.__class__ is float:
+            return float.__gt__(self, other)
+        pair = self._pair(">", other)
+        return NotImplemented if pair is None else pair[0] > pair[1]
+
+    def __ge__(self, other: Any) -> bool:
+        if other.__class__ is float:
+            return float.__ge__(self, other)
+        pair = self._pair(">=", other)
+        return NotImplemented if pair is None else pair[0] >= pair[1]
+
+
+def _frequency(numerator: int, denominator: int) -> Frequency:
+    numerator, denominator = _reduced(numerator, denominator)
+    try:
+        self = _new_float(Frequency, numerator / denominator)
+    except OverflowError:
+        raise InvalidValueError(
+            f"a frequency is at most {sys.float_info.max!r} Hz; this one is higher"
+        ) from None
+    self._n = numerator
+    self._d = denominator
+    return self
+
+
+def _not_a_frequency(what: str, value: Any, example: str = "5e9 or 5 * pulse.ghz") -> UnitError:
+    return UnitError(
+        f"{what} is a frequency, and {value} is a time; give a frequency, as a bare "
+        f"number in its unit or with units ({example})"
+    )
+
+
+def _not_a_time(value: Any, what: str = "") -> UnitError:
+    return UnitError(
+        f"{what + ': ' if what else ''}{value} is a frequency where a time goes; give a time, "
+        "as a number of ns or with units (20 * pulse.ns)"
+    )
+
+
+def as_bare_time(value: Any, what: str, unit: str) -> Any:
+    """*value*, a parameter *what* that is a time as a bare number of *unit*
+    (``ns`` or ``us``), as it is; a ``Frequency`` raises."""
+    if value.__class__ is Frequency:
+        raise UnitError(
+            f"{what} is a time, a number of {unit}, and {value} is a frequency; "
+            f"give the number of {unit}"
+        )
+    return value
+
+
+def as_hz(value: Any, what: str) -> Any:
+    """*value*, a parameter *what* that is a frequency in Hz: a ``Frequency``
+    as its float of hertz, a bare number as it is (hertz), anything else as
+    it is, for the parameter's own checks; a ``Time`` raises."""
+    cls = value.__class__
+    if cls is Frequency:
+        return float(value)
+    if cls is Time:
+        raise _not_a_frequency(what, value)
+    return value
+
+
+def as_ghz(value: Any, what: str) -> Any:
+    """*value*, a parameter *what* whose name gives GHz (a clock or sample
+    rate): a ``Frequency`` in GHz, a bare number as it is (GHz, as the name
+    says); a ``Time`` raises."""
+    cls = value.__class__
+    if cls is Frequency:
+        return value._n / (value._d * 10**9)
+    if cls is Time:
+        raise _not_a_frequency(what, value, "2.0 or 2 * pulse.ghz")
+    return value
+
+
 def as_nanoseconds(value: Any) -> Any:
     """A time a parameter takes in ns, given as a number or a ``Time``: a
     ``Time`` as its float of nanoseconds, anything else as it is, for the
-    parameter's own checks."""
-    return float(value) if value.__class__ is Time else value
+    parameter's own checks; a ``Frequency`` raises."""
+    cls = value.__class__
+    if cls is Time:
+        return float(value)
+    if cls is Frequency:
+        raise _not_a_time(value)
+    return value
 
 
 class _Unit(tuple[str, int]):
@@ -332,9 +612,12 @@ class _Unit(tuple[str, int]):
     def __get__(self, module: ModuleType | None, owner: type) -> Any:
         if module is None:
             return self
-        name, nanoseconds = self
-        unit = module.__dict__[name] = Time(nanoseconds)
+        name, amount = self
+        unit = module.__dict__[name] = Time(amount) if name in _TIME_UNITS else Frequency(amount)
         return unit
+
+
+_TIME_UNITS = frozenset(("ns", "us", "ms", "s"))
 
 
 class _Module(ModuleType):
@@ -342,6 +625,10 @@ class _Module(ModuleType):
     us = _Unit(("us", 10**3))
     ms = _Unit(("ms", 10**6))
     s = _Unit(("s", 10**9))
+    hz = _Unit(("hz", 1))
+    khz = _Unit(("khz", 10**3))
+    mhz = _Unit(("mhz", 10**6))
+    ghz = _Unit(("ghz", 10**9))
 
 
 sys.modules[__name__].__class__ = _Module
@@ -351,6 +638,10 @@ if TYPE_CHECKING:
     us: Time
     ms: Time
     s: Time
+    hz: Frequency
+    khz: Frequency
+    mhz: Frequency
+    ghz: Frequency
 
 
 _CYCLES_PER_NS: dict[float, tuple[int, int]] = {}

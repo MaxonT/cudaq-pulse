@@ -704,7 +704,7 @@ And three frequencies on one line:
        x90 = gaussian(duration=40, amplitude=0.25, sigma=10.0)
        for _ in range(3):
            drive(drive_line, x90)
-           shift_frequency(drive_line.tone, 1.0e6)
+           shift_frequency(drive_line.tone, 1 * pulse.mhz)
 
 Both are checked against the description when they compile:
 

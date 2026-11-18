@@ -278,7 +278,7 @@ def shift_frequency(tone: Tone, frequency: Numeric) -> Tone:
 
     Args:
         tone: Tone handle.
-        frequency: Frequency offset in Hz.
+        frequency: Frequency offset, in Hz or with units (``2 * pulse.mhz``).
     """
     _require_context("shift_frequency")
 
@@ -288,7 +288,7 @@ def set_frequency(tone: Tone, frequency: Numeric) -> Tone:
 
     Args:
         tone: Tone handle.
-        frequency: Absolute frequency in Hz.
+        frequency: Absolute frequency, in Hz or with units (``5 * pulse.ghz``).
     """
     _require_context("set_frequency")
 
@@ -454,8 +454,9 @@ def custom_samples(samples: Sequence[float], sample_rate_ghz: float | None = Non
 
     Args:
         samples: Non-empty array-like of real envelope sample values.
-        sample_rate_ghz: The rate the samples were made for, in GHz; they
-            must last a whole number of clock cycles.
+        sample_rate_ghz: The rate the samples were made for, in GHz or with
+            units (``2 * pulse.ghz``); they must last a whole number of clock
+            cycles.
 
     Returns:
         Waveform value.

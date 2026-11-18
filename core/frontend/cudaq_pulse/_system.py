@@ -47,7 +47,7 @@ from ._errors import (
     _count,
     _ranges,
 )
-from ._units import Time, as_nanoseconds
+from ._units import Time, as_ghz, as_nanoseconds
 from .classical import Link
 
 if TYPE_CHECKING:
@@ -568,6 +568,8 @@ class Processor:
     dispatch_keys: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.clock_ghz is not None and self.clock_ghz.__class__ not in (int, float):
+            object.__setattr__(self, "clock_ghz", as_ghz(self.clock_ghz, "Processor.clock_ghz"))
         if isinstance(self.links, (str, bytes)) or not isinstance(self.links, Iterable):
             raise InvalidTypeError(
                 f"Processor.links is a list of link names or ids, got {self.links!r}"
@@ -822,6 +824,10 @@ class Controller:
     processors: Sequence[Processor] = ()
 
     def __post_init__(self) -> None:
+        for name in ("clock_ghz", "sample_rate_ghz"):
+            value = getattr(self, name)
+            if value is not None and value.__class__ is not float and value.__class__ is not int:
+                object.__setattr__(self, name, as_ghz(value, f"Controller.{name}"))
         for name in ("persistent_frames", "blocks_on_calls", "space_updates"):
             if not isinstance(getattr(self, name), bool):
                 raise InvalidValueError(
@@ -1234,6 +1240,15 @@ class ControlSystem:
     def __post_init__(self) -> None:
         from .compiler import _NO_DELAYS, _MachineModel
 
+        reference = self.reference_clock_ghz
+        if (
+            reference is not None
+            and reference.__class__ is not float
+            and reference.__class__ is not int
+        ):
+            object.__setattr__(
+                self, "reference_clock_ghz", as_ghz(reference, "ControlSystem.reference_clock_ghz")
+            )
         if isinstance(self.controllers, Controller) or not isinstance(self.controllers, Iterable):
             raise InvalidTypeError(
                 f"ControlSystem.controllers is a list of pulse.Controller, got {self.controllers!r}"

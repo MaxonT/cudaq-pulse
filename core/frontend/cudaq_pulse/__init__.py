@@ -106,7 +106,12 @@ if TYPE_CHECKING:
     from ._system import Controller as Controller
     from ._system import ControlSystem as ControlSystem
     from ._system import Processor as Processor
+    from ._units import Frequency as Frequency
     from ._units import Time as Time
+    from ._units import ghz as ghz
+    from ._units import hz as hz
+    from ._units import khz as khz
+    from ._units import mhz as mhz
     from ._units import ms as ms
     from ._units import ns as ns
     from ._units import s as s
@@ -132,6 +137,11 @@ _LAZY_EXPORTS = {
     "us": "._units",
     "ms": "._units",
     "s": "._units",
+    "Frequency": "._units",
+    "hz": "._units",
+    "khz": "._units",
+    "mhz": "._units",
+    "ghz": "._units",
     "Capability": "._capability",
     # Making an enum costs more than importing what compiling needs.
     "ErrorCode": "._error_codes",
@@ -194,6 +204,11 @@ __all__ = [
     "us",
     "ms",
     "s",
+    "Frequency",
+    "hz",
+    "khz",
+    "mhz",
+    "ghz",
     "viz",
     "classical",
     "Bits",

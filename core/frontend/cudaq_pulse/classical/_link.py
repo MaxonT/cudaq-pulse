@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .._errors import InvalidTypeError, InvalidValueError
-from .._units import Time
+from .._units import Frequency, Time, _not_a_time
 
 if TYPE_CHECKING:
     from .._system import Controller
@@ -57,8 +57,12 @@ class Link:
         # compiles: no call here for the common case of no times.
         if self.fixed_ns.__class__ is Time:
             object.__setattr__(self, "fixed_ns", float(self.fixed_ns))
+        elif self.fixed_ns.__class__ is Frequency:
+            raise _not_a_time(self.fixed_ns, "Link.fixed_ns")
         if self.feedback_ns.__class__ is Time:
             object.__setattr__(self, "feedback_ns", float(self.feedback_ns))
+        elif self.feedback_ns.__class__ is Frequency:
+            raise _not_a_time(self.feedback_ns, "Link.feedback_ns")
         if self.controllers is not None:
             from .._system import Controller
 

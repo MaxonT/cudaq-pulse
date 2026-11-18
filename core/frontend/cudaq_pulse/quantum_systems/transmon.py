@@ -323,7 +323,12 @@ def transmon_lattice(
         with side length = ceil(sqrt(qudit_count))).
     """
     from .._device import _calibrated
+    from .base import _hz
 
+    base_frequency_hz = _hz(base_frequency_hz, "base_frequency_hz")
+    frequency_range_hz = _hz(frequency_range_hz, "frequency_range_hz")
+    anharmonicity_hz = _hz(anharmonicity_hz, "anharmonicity_hz")
+    coupling_strength_hz = _hz(coupling_strength_hz, "coupling_strength_hz")
     built = _described_lattice(
         qudit_count,
         base_frequency_hz=base_frequency_hz,

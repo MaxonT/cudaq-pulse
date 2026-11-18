@@ -115,6 +115,15 @@ assert_type(pulse.simulate(lowered.generic, 0.7), pulse.SimulationResult)
 assert_type(lowered.generic.bind([0.7]), pulse.ScheduledKernel)
 # Times take units or numbers of ns.
 assert_type(pulse.simulate(lowered, t_end=40 * pulse.ns, dt_ns=0.5), pulse.SimulationResult)
+# A unit times a number, either way round, is a time or a frequency; a
+# frequency goes wherever a number of Hz does, and into a clock in GHz.
+assert_type(20 * pulse.ns, pulse.Time)
+assert_type(pulse.ns * 20, pulse.Time)
+assert_type(5 * pulse.ghz, pulse.Frequency)
+assert_type(pulse.mhz * 2.5, pulse.Frequency)
+PhysicalQudit(0, 5.1 * pulse.ghz, 50.0, 30.0, anharmonicity_hz=-220 * pulse.mhz)
+Coupling((0, 1), 3 * pulse.mhz)
+pulse.Controller(clock_ghz=500 * pulse.mhz)
 assert_type(pulse.simulate(rabi, dev.qudits[0], 0.5), pulse.SimulationResult)
 assert_type(pulse.simulate(compiled, dev.qudits[0], 0.5), pulse.SimulationResult)
 simulated = pulse.simulate(lowered, shots_count=10)

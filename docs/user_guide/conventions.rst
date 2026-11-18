@@ -92,17 +92,20 @@ the kernel compiles, for the quantum system it compiles for:
 
 **Frequencies** are in Hz everywhere: ``set_frequency`` sets the tone's
 frequency, ``shift_frequency`` adds to it, and a qudit's ``frequency_hz``
-and ``anharmonicity_hz`` are in Hz. A transmon's anharmonicity is negative:
-its 1-2 transition is at ``frequency_hz + anharmonicity_hz``.
+and ``anharmonicity_hz`` are in Hz. A frequency is written with units,
+``5.1 * pulse.ghz`` or ``2 * pulse.mhz``, or as a bare number, which is in
+Hz: ``5.1 * pulse.ghz`` and ``5.1e9`` are the same value, bit for bit (see
+:ref:`units`). A transmon's anharmonicity is negative: its 1-2 transition
+is at ``frequency_hz + anharmonicity_hz``.
 
 .. code-block:: python
 
    @pulse.kernel
    def tuned(qudit):
        d = get_drive_line(qudit)
-       set_frequency(d.tone, 5.1e9)
+       set_frequency(d.tone, 5.1 * pulse.ghz)
        drive(d, square(8, 0.1))
-       shift_frequency(d.tone, 2e6)
+       shift_frequency(d.tone, 2e6)  # a bare number: 2 MHz in Hz
        drive(d, square(8, 0.1))
 
 

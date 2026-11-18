@@ -856,6 +856,10 @@ def export(
     ``ValueError``. Without runtime qudits, each line has the frequency of
     its own tone (``_native_frequencies``).
     """
+    if sample_rate_ghz is not None and sample_rate_ghz.__class__ not in (float, int):
+        from ._units import as_ghz
+
+        sample_rate_ghz = as_ghz(sample_rate_ghz, "sample_rate_ghz")
     program = _export(lowered, sample_rate_ghz, controller, version)
     if lowered._role is None or lowered._role.slots == 0:
         _native_frequencies(program, lowered.quantum_system)

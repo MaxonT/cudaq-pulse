@@ -14,7 +14,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from .._errors import PulseWarning
-from .._units import Time
+from .._units import Frequency, Time
 from ..compiler import CompileOptions
 from ._emitter import PulseIREmitter, tracing_frames
 
@@ -82,7 +82,7 @@ def _bare(value: Any) -> bool:
     program."""
     cls = value.__class__
     if cls is not int and not (
-        isinstance(value, numbers.Real) and not isinstance(value, (int, Time))
+        isinstance(value, numbers.Real) and not isinstance(value, (int, Time, Frequency))
     ):
         return False
     return bool(value != 0)

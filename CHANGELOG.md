@@ -122,6 +122,26 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
   once when scrolled into view, with Replay and step buttons, and its data
   comes from what the page compiles and simulates. Readers without
   JavaScript, or who ask for reduced motion, see the still frame.
+- **Frequencies with units.** `pulse.hz`, `pulse.khz`, `pulse.mhz` and
+  `pulse.ghz` make a frequency, a `pulse.Frequency`, as the time units make
+  a time: `5.1 * pulse.ghz`, `pulse.mhz * 250`. Every parameter that takes
+  a frequency takes one: `set_frequency` and `shift_frequency` in a kernel;
+  on the host a qudit's `frequency_hz` and `anharmonicity_hz`, a coupling's
+  `strength_hz`, the frequencies of `DispersiveReadout`, `FluxCZ`,
+  `ResidualZZ`, `transmon_lattice` and the transmon models, and the
+  frequency arguments of `classical.calibration` and of a calibration's
+  `exchange_hz` and `flux_for_detuning`. A bare number is still a number of
+  hertz, with no warning. A unit scales the digits written, so
+  `5.1234 * pulse.ghz` is `5.1234e9` bit for bit, and a program written
+  either way compiles and exports to the same bytes. `clock_ghz`,
+  `sample_rate_ghz` and `reference_clock_ghz` keep taking a bare number in
+  GHz, as their names say, and also take a frequency in any unit:
+  `Controller(clock_ghz=500 * pulse.mhz)` is `clock_ghz=0.5`. A time times
+  a frequency is its number of cycles; a frequency where a time goes (a
+  duration, a wait, or a time parameter such as `delay_ns`, `duration_ns` or
+  `t1_us`) is a `TypeError` that says what to write. The API reference's
+  new Units section lists the units, and three tutorials, three user guide
+  pages and three examples write frequencies with them.
 
 ### Changed
 
@@ -133,6 +153,11 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
   row above the plot. The rows, bars, labels and axis limits, and the
   functions' arguments, are as before, and matplotlib is still imported only
   when a plot is drawn.
+- **A time is not a frequency.** A time given where a frequency goes, as in
+  `shift_frequency(tone, 20 * pulse.ns)` or `PhysicalQudit(0, 5 * pulse.ns,
+  ...)`, was read as that number of hertz (20 Hz) and is now a `TypeError`
+  that says to write a frequency (`5e9` or `5 * pulse.ghz`). Bare numbers,
+  and times where times go, work as before.
 
 ### Fixed
 

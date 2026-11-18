@@ -28,6 +28,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .._errors import InvalidValueError
+from .base import _hz
 
 __all__ = ["ChargeCoupledPair", "TransmonCircuit", "anchored_charge_coupling_hz"]
 
@@ -49,6 +50,10 @@ class TransmonCircuit:
     ej_max_hz: float
     asymmetry: float
     label: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "ec_hz", _hz(self.ec_hz, "ec_hz"))
+        object.__setattr__(self, "ej_max_hz", _hz(self.ej_max_hz, "ej_max_hz"))
 
     def ej_hz(self, flux: float) -> float:
         x = math.pi * flux
@@ -89,11 +94,11 @@ class TransmonCircuit:
 
     def flux_for_f01(self, f01_hz: float, tol: float = 1e-9) -> float:
         """The flux in [0, 1/2] at which f01 is ``f01_hz``."""
-        return self._invert(self.f01_hz, f01_hz, tol)
+        return self._invert(self.f01_hz, _hz(f01_hz, "f01_hz"), tol)
 
     def flux_for_f12(self, f12_hz: float, tol: float = 1e-9) -> float:
         """The flux in [0, 1/2] at which the 1-2 transition is ``f12_hz``."""
-        return self._invert(self.f12_hz, f12_hz, tol)
+        return self._invert(self.f12_hz, _hz(f12_hz, "f12_hz"), tol)
 
     def flux_curvature_hz(self, flux: float, step: float = 1e-3) -> float:
         """d^2 f01 / dPhi^2, the second-order flux-noise sensitivity (Hz per
@@ -135,6 +140,9 @@ class ChargeCoupledPair:
     b: TransmonCircuit
     g_c_hz: float
     level_count: int = 5
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "g_c_hz", _hz(self.g_c_hz, "g_c_hz"))
 
     def hamiltonian(self, flux_a: float, flux_b: float) -> npt.NDArray[np.float64]:
         ea, na = self.a.eigensystem(flux_a, self.level_count)
@@ -190,6 +198,7 @@ class ChargeCoupledPair:
         If ``b``'s 1-2 transition cannot reach that frequency, ``b`` stays
         at the nearer sweet spot and ``a`` is swept through the crossing.
         """
+        interaction_frequency_hz = _hz(interaction_frequency_hz, "interaction_frequency_hz")
         f12_range = sorted((self.b.f12_hz(0.0), self.b.f12_hz(0.5)))
         if f12_range[0] <= interaction_frequency_hz <= f12_range[1]:
             flux_a = self.a.flux_for_f01(interaction_frequency_hz)
@@ -239,6 +248,8 @@ def anchored_charge_coupling_hz(
     J_2 is nearly linear in g_c, so a few fixed-point steps converge to
     machine precision.
     """
+    g_11_20_hz = _hz(g_11_20_hz, "g_11_20_hz")
+    interaction_frequency_hz = _hz(interaction_frequency_hz, "interaction_frequency_hz")
     g_c = g_11_20_hz / math.sqrt(2.0)
     for _ in range(8):
         j2 = ChargeCoupledPair(data, auxiliary, g_c, level_count).j2_hz(interaction_frequency_hz)

@@ -762,6 +762,10 @@ class PackedIRBuilder:
             tv = operands[0].vid
             rtv = results[0].vid
             val_raw = a.get("freq_hz", 0.0)
+            if val_raw.__class__ is not float and val_raw.__class__ is not int:
+                from ._durations import in_hz
+
+                val_raw = in_hz(kind.removeprefix("pulse."), val_raw)
             if isinstance(val_raw, IRValue):
                 raise CompilationError(
                     "a frequency must be a number; time-varying frequencies "
@@ -784,6 +788,10 @@ class PackedIRBuilder:
             tv = operands[0].vid
             rtv = results[0].vid
             val_raw = a.get("freq_hz", 0.0)
+            if val_raw.__class__ is not float and val_raw.__class__ is not int:
+                from ._durations import in_hz
+
+                val_raw = in_hz(kind.removeprefix("pulse."), val_raw)
             if isinstance(val_raw, IRValue):
                 raise CompilationError(
                     "a frequency must be a number; time-varying frequencies "

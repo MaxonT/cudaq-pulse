@@ -193,8 +193,8 @@ To execute on a GPU (requires cuDensityMat runtime):
        qudits={
            0: PhysicalQudit(
                index=0,
-               frequency_hz=5.0e9,
-               anharmonicity_hz=-200.0e6,
+               frequency_hz=5 * pulse.ghz,
+               anharmonicity_hz=-200 * pulse.mhz,
                t1_us=50.0,
                t2_star_us=30.0,
                drive=MicrowaveDrive(amplitude_scale_rad_per_ns=1.0),
