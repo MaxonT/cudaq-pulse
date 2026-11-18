@@ -64,12 +64,14 @@ and ``Coupling.at`` read them without compiling anything:
 
 .. code-block:: python
 
+   import cudaq_pulse as pulse
+
    qs = pulse.quantum_system("transmon_surface17")
    d4, x2 = qs.qudit("D4"), qs.qudit("X2")
    qs.physical_qudits[d4.index].frequency_at(-0.3)         # Hz, 0.3 flux quanta off idle
    qs.physical_qudits[d4.index].amplitude_for(5.276e9)     # -0.3015
    point = qs.coupling(x2, d4).at(-0.3015, side=d4)        # X2 idles
-   point.frequencies_hz, point.exchange_hz, point.exchanges_hz[(1, 1), (2, 0)]
+   print(point.frequencies_hz, point.exchange_hz, point.exchanges_hz[(1, 1), (2, 0)])
 
 Each component records where its values come from in ``source``: on the
 shipped system, the calibration entries they are read from, which
