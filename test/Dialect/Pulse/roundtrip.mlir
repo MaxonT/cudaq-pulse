@@ -49,13 +49,15 @@ func.func @test_readout() -> (!pulse.readout_line, !pulse.tone, !pulse.measureme
 // CHECK: pulse.readout %{{.*}}, discriminated :
 // CHECK: pulse.readout %{{.*}}, trace :
 // CHECK: pulse.readout %{{.*}}, counts :
+// CHECK: pulse.readout %{{.*}}, integrated :
 // CHECK: pulse.schedule_block alap (
 func.func @test_readout_modes(%r0: !pulse.readout_line, %t0: !pulse.tone, %wf: !pulse.waveform) -> (!pulse.readout_line, !pulse.tone) {
   %r1, %t1, %m1 = pulse.readout %r0, %wf, %t0, iq : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
   %r2, %t2, %m2 = pulse.readout %r1, %wf, %t1, discriminated : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
   %r3, %t3, %m3 = pulse.readout %r2, %wf, %t2, trace : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
   %r4, %t4, %m4 = pulse.readout %r3, %wf, %t3, counts : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
-  %r5, %t5 = pulse.schedule_block alap (%r4, %t4) : (!pulse.readout_line, !pulse.tone) -> (!pulse.readout_line, !pulse.tone) {
+  %r6, %t6, %m6 = pulse.readout %r4, %wf, %t4, integrated : !pulse.readout_line, !pulse.waveform, !pulse.tone -> !pulse.readout_line, !pulse.tone, !pulse.measurement
+  %r5, %t5 = pulse.schedule_block alap (%r6, %t6) : (!pulse.readout_line, !pulse.tone) -> (!pulse.readout_line, !pulse.tone) {
   ^bb0(%r: !pulse.readout_line, %t: !pulse.tone):
     pulse.yield %r, %t : !pulse.readout_line, !pulse.tone
   }

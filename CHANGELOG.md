@@ -25,6 +25,22 @@ release's `## [X.Y.Z] - Unreleased`, in the pull request that makes it.
   misspelling, the misspelled name as `value`. Messages read as before; a
   few that gave no fix now give one (`drive(q, ...)` says to pass
   `get_drive_line(q)`, `shift_phase(line, ...)` to pass `line.tone`).
+- **Integrated acquisition.** `readout(line, waveform,
+  acquire="integrated")` acquires the integrated IQ point, one complex
+  number per shot, instead of the level (`acquire="level"`, the default).
+  A kernel sends the point to classical functions that take `complex` or
+  `list[complex]`, or returns it; branching on it, comparing it or sending
+  it as `pulse.Bits` or `list[int]` is a `CompilationError`, and
+  `pulse-verify` rejects IR that reads its level, through regions too.
+  `SimulationResult.acquisitions(readout)` gives each shot's point, drawn
+  from the dispersive readout model at the level the shot observed (with
+  `shots_count`); the readout projects the qudit as a level readout does,
+  and `readout="model"` adds no assignment errors to it. The IR keeps the
+  mode on `pulse.readout` (the new `integrated`; a level stays `iq`), the
+  exports (`/1`, `/2`, `unroll`) give such a readout `"acquire":
+  "integrated"`, and a controller acquires points only with the new
+  `Capability.ACQUIRE_INTEGRATED`. Programs that read out only levels
+  compile to the same IR and exports, byte for byte.
 - **Unit warnings.** `pulse.compile(k, unit_warnings=True)` issues a
   `pulse.UnitWarning` at each kernel line that gives a duration, wait,
   `sigma`, DRAG `beta` or flat-top `width` as a bare number (clock cycles:

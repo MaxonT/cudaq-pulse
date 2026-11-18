@@ -225,13 +225,24 @@ struct NotSupportedYet : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-/// Refuse a readout whose mode the exports do not support yet: only iq.
+/// Refuse a readout whose mode the exports do not support yet: only iq (a
+/// level) and integrated (an IQ point).
 inline void requireExportedMode(mlir::Operation *op) {
   if (auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op);
-      readout && readout.getMode() != pulse::ReadoutMode::IQ) [[unlikely]]
-    throw NotSupportedYet("readout mode " +
-                          pulse::stringifyReadoutMode(readout.getMode()).str() +
-                          " is not supported by the exports yet; only iq is");
+      readout && readout.getMode() != pulse::ReadoutMode::IQ &&
+      readout.getMode() != pulse::ReadoutMode::Integrated) [[unlikely]]
+    throw NotSupportedYet(
+        "readout mode " + pulse::stringifyReadoutMode(readout.getMode()).str() +
+        " is not supported by the exports yet; only iq and integrated are");
+}
+
+/// What a readout event's `acquire` key says, empty for a level (iq), which
+/// the exports leave out.
+inline llvm::StringRef exportedAcquire(mlir::Operation *op) {
+  auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op);
+  return readout && readout.getMode() == pulse::ReadoutMode::Integrated
+             ? "integrated"
+             : "";
 }
 
 /// `value` as Python's repr() writes a float.
@@ -1311,7 +1322,8 @@ struct ControllerEventWalk : ControllerExpressions {
         op->getName().stripDialect().str(), lineOf(allocation), qubit, start,
         duration, std::vector<int64_t>(iteration.begin(), iteration.end()),
         std::move(nodes), frequency, phase, branches, std::vector<int64_t>{},
-        std::vector<int64_t>{}, std::string(), std::string(), kUnknown);
+        std::vector<int64_t>{}, std::string(), exportedAcquire(op).str(),
+        kUnknown);
   }
 
   /// What the next event, a drive, readout or wait, has that is known only
@@ -2104,10 +2116,11 @@ private:
     return check(PyUnicode_InternFromString(text));
   }
   struct Keys {
-    nb::object amplitude = key("amplitude"), answer = key("answer"),
-               answers = key("answers"), arm = key("arm"),
-               branch = key("branch"), conditions = key("conditions"),
-               constant = key("const"), controller = key("controller"),
+    nb::object acquire = key("acquire"), amplitude = key("amplitude"),
+               answer = key("answer"), answers = key("answers"),
+               arm = key("arm"), branch = key("branch"),
+               conditions = key("conditions"), constant = key("const"),
+               controller = key("controller"),
                duration = key("duration_cycles"), end = key("end_cycles"),
                segment = key("segment"), frameUpdates = key("frame_updates"),
                frequency = key("frequency_hz"), function = key("function"),
@@ -2432,6 +2445,8 @@ private:
       }
       put(event, keys.frequency, number(frequency));
       put(event, keys.phase, number(phase));
+      if (!mode.empty())
+        put(event, keys.acquire, string(mode));
     } else if (sync) {
       put(event, keys.lines, integers(joined));
     } else if (call) {
@@ -4122,6 +4137,18 @@ public:
     if (!walker.run(function))
       throw std::runtime_error(walker.error);
     return next;
+  }
+
+  /// The index (as next_measurement numbers them) of each readout that
+  /// acquires an IQ point rather than a level (mode integrated).
+  std::vector<int64_t> integrated_readouts() {
+    std::lock_guard<std::recursive_mutex> guard(*lock_);
+    std::vector<int64_t> found;
+    auto readouts = readoutOps();
+    for (size_t i = 0; i < readouts.size(); ++i)
+      if (!exportedAcquire(readouts[i]).empty())
+        found.push_back(static_cast<int64_t>(i));
+    return found;
   }
 
   using ReadoutDrive =
@@ -6614,10 +6641,21 @@ public:
       }
 
       case kOpReadout: {
-        requirePayload(6);
+        // A seventh word is the mode of a readout that does not give a
+        // level (acquire="integrated").
+        if (plen != 7)
+          requirePayload(6);
+        auto mode = pulse::ReadoutMode::IQ;
+        if (plen == 7) {
+          auto given = pulse::symbolizeReadoutMode(static_cast<uint32_t>(p[6]));
+          if (!given || *given != pulse::ReadoutMode::Integrated)
+            throw std::invalid_argument("packed: invalid readout mode " +
+                                        std::to_string(p[6]));
+          mode = *given;
+        }
         auto roOp = pulse::ReadoutOp::create(
             *builder_, loc, readoutTy, toneTy, measTy, look(p[0]), look(p[1]),
-            look(p[2]), pulse::ReadoutMode::IQ, /*start_cycles=*/{},
+            look(p[2]), mode, /*start_cycles=*/{},
             /*duration_cycles=*/{}, /*period_cycles=*/{});
         bind(p[3], roOp.getUpdatedLine());
         bind(p[4], roOp.getUpdatedTone());
@@ -7392,6 +7430,8 @@ NB_MODULE(_cudaq_pulse_native, m) {
            nb::call_guard<nb::gil_scoped_release>(),
            "Every readout on a path: (index, iteration, frequency Hz, "
            "amplitude)")
+      .def("integrated_readouts", &PulseModule::integrated_readouts,
+           "The index of each readout that acquires an IQ point")
       .def("drive_frames", &PulseModule::drive_frames, nb::arg("path"),
            nb::arg("outcome") = -1, nb::call_guard<nb::gil_scoped_release>(),
            "Every drive on a path with the frame it plays with, and the "

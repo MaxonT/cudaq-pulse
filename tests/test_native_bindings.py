@@ -110,7 +110,7 @@ def test_the_exports_refuse_a_readout_mode_they_do_not_support_yet():
     text = pulse.compile(_measured).lower(Q[0]).mlir()
     assert ", iq <{" in text
     module = native.MLIRPipeline().parse_to_module(text.replace(", iq <{", ", trace <{"))
-    message = "readout mode trace is not supported by the exports yet; only iq is"
+    message = "readout mode trace is not supported by the exports yet; only iq and integrated are"
     with pytest.raises(NotImplementedError, match=message):
         module.events()
     with pytest.raises(NotImplementedError, match=message):

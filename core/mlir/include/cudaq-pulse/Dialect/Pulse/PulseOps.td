@@ -266,12 +266,21 @@ def ReadoutOp : PulseOp<"readout", []> {
     measurement completes at the end of the pulse: `pulse.is_set` and
     `pulse.outcome` read it, and `pulse-verify` checks that ops
     conditioned on it start after it completes. `mode` names what the
-    acquisition gives: `iq` (demodulated and discriminated into a level, what
-    the frontend emits), `discriminated`, `trace` or `counts`. Only `iq` is
+    acquisition gives: `iq`, the level, demodulated and discriminated
+    (`readout(line, waveform)` in a kernel, `acquire="level"`);
+    `integrated`, the integrated IQ point itself (`acquire="integrated"`);
+    `discriminated`, `trace` or `counts`. Only `iq` and `integrated` are
     simulated and exported so far; the others are refused there.
+
+    The measurement of an `integrated` readout holds an IQ point, not a
+    level: `pulse.is_set` and `pulse.outcome` may not read it, through
+    regions too, and a classical call takes it only as an IQ argument
+    (`iq:n`). Its point is returned to the host, and the readout still
+    projects the qudit on the level it observes.
 
     ```mlir
     %r1, %t1, %m = pulse.readout %r0, %w, %t0, iq : ...
+    %r2, %t2, %p = pulse.readout %r1, %w, %t1, integrated : ...
     ```
   }];
   let arguments = !con((ins

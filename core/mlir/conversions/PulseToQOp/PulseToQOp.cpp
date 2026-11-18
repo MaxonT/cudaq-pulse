@@ -687,7 +687,10 @@ struct PulseToQOpPass
             quditFreqHz.try_emplace(qi, freqAttr.getValueAsDouble());
       }
       if (auto readout = dyn_cast<pulse::ReadoutOp>(op)) {
-        if (readout.getMode() != pulse::ReadoutMode::IQ && !notIq)
+        // An integrated readout projects as a level readout does; its IQ
+        // point is drawn on the host.
+        if (readout.getMode() != pulse::ReadoutMode::IQ &&
+            readout.getMode() != pulse::ReadoutMode::Integrated && !notIq)
           notIq = op;
         readouts.push_back(op);
       }
@@ -698,7 +701,8 @@ struct PulseToQOpPass
       notIq->emitError("readout mode ")
           << pulse::stringifyReadoutMode(
                  cast<pulse::ReadoutOp>(notIq).getMode())
-          << " is not supported by the simulator yet; only iq is";
+          << " is not supported by the simulator yet; only iq and integrated "
+             "are";
       return signalPassFailure();
     }
     Operation *unanswered = nullptr;

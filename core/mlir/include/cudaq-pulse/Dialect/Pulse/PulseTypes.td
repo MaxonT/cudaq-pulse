@@ -106,7 +106,8 @@ def ReadoutMode : I32Enum<"ReadoutMode", "readout mode", [
     I32EnumCase<"IQ", 0, "iq">,
     I32EnumCase<"Discriminated", 1, "discriminated">,
     I32EnumCase<"Trace", 2, "trace">,
-    I32EnumCase<"Counts", 3, "counts">
+    I32EnumCase<"Counts", 3, "counts">,
+    I32EnumCase<"Integrated", 4, "integrated">
   ]> {
   let cppNamespace = "::pulse";
 }
