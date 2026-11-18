@@ -2726,7 +2726,7 @@ simulationProgram(mlir::ModuleOp source) {
       can = type.isF64() || type.isSignlessInteger(64);
     } else if (def->getNumRegions() == 0 && !isReadoutOp(def) &&
                !mlir::isa<classical::SubmitOp>(def) &&
-               !mlir::isa<pulse::MeasurementType>(type) &&
+               !pulse::isReadoutResultType(type) &&
                !pulse::isClassicalType(type) &&
                llvm::none_of(def->getOperandTypes(), isThreadedType)) {
       // Computed from constants and answers alone (not from where a line
@@ -5642,8 +5642,8 @@ private:
 
 bool isTimedPulseType(mlir::Type type) {
   return mlir::isa<pulse::DriveLineType, pulse::ReadoutLineType,
-                   pulse::ToneType, pulse::MeasurementType>(type) ||
-         pulse::isClassicalType(type);
+                   pulse::ToneType>(type) ||
+         pulse::isReadoutResultType(type) || pulse::isClassicalType(type);
 }
 
 /// Whether `value` is defined in `body` or in a region nested in it.
@@ -5660,9 +5660,10 @@ bool definedIn(mlir::Value value, mlir::Block *body) {
 }
 
 /// Wrap the ops traced into `body` in a `pulse.schedule_block` at the
-/// builder's insertion point. The lines, tones and measurements the body
-/// uses from outside become its operands; the latest version of every line
-/// and tone it holds, and every measurement it takes, become its results.
+/// builder's insertion point. The lines, tones and readout results (levels
+/// and IQ points) the body uses from outside become its operands; the latest
+/// version of every line and tone it holds, and every readout result it
+/// takes, become its results.
 pulse::ScheduleBlockOp buildScheduleBlock(mlir::OpBuilder &builder,
                                           mlir::Location loc,
                                           std::unique_ptr<mlir::Block> body,
@@ -5693,7 +5694,7 @@ pulse::ScheduleBlockOp buildScheduleBlock(mlir::OpBuilder &builder,
   llvm::SmallVector<mlir::Value> outputs;
   for (mlir::Operation &op : *body)
     for (mlir::Value result : op.getResults())
-      if (mlir::isa<pulse::MeasurementType>(result.getType()) ||
+      if (pulse::isReadoutResultType(result.getType()) ||
           (pulse::isLinearPulseType(result.getType()) && result.use_empty()))
         outputs.push_back(result);
 
@@ -5853,6 +5854,7 @@ public:
     auto wfTy = pulse::WaveformType::get(ctx_.get());
     auto durTy = pulse::DurationType::get(ctx_.get());
     auto measTy = pulse::MeasurementType::get(ctx_.get());
+    auto pointTy = pulse::IQDataType::get(ctx_.get());
 
     llvm::DenseMap<int64_t, mlir::Value> ssa;
     llvm::DenseMap<int64_t, mlir::Value> qubitSSA;
@@ -6642,7 +6644,7 @@ public:
 
       case kOpReadout: {
         // A seventh word is the mode of a readout that does not give a
-        // level (acquire="integrated").
+        // level (acquire="integrated"), which gives its IQ point instead.
         if (plen != 7)
           requirePayload(6);
         auto mode = pulse::ReadoutMode::Level;
@@ -6653,8 +6655,11 @@ public:
                                         std::to_string(p[6]));
           mode = *given;
         }
+        mlir::Type resultTy = mode == pulse::ReadoutMode::Integrated
+                                  ? mlir::Type(pointTy)
+                                  : mlir::Type(measTy);
         auto roOp = pulse::ReadoutOp::create(
-            *builder_, loc, readoutTy, toneTy, measTy, look(p[0]), look(p[1]),
+            *builder_, loc, readoutTy, toneTy, resultTy, look(p[0]), look(p[1]),
             look(p[2]), mode, /*start_cycles=*/{},
             /*duration_cycles=*/{}, /*period_cycles=*/{});
         bind(p[3], roOp.getUpdatedLine());

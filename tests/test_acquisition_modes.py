@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 import cudaq_pulse as pulse
 import numpy as np
 import pytest
 from cudaq_pulse import CompilationError, InvalidValueError
-from cudaq_pulse.controller import ControllerLimitError, unroll
+from cudaq_pulse.controller import ControllerLimitError, ReadoutLine, unroll
 from cudaq_pulse.quantum_systems import DispersiveReadout, PhysicalQudit, ReadoutPulse
 from cudaq_pulse.runtime import _calls
 
@@ -105,7 +106,9 @@ def test_acquire_level_is_the_readout_it_always_was():
 def test_an_integrated_readout_is_marked_in_the_ir_and_both_exports():
     lowered = _lower(both)
     text = lowered.mlir()
-    assert ", level <{" in text and ", integrated <{" in text
+    assert ", level <{" in text and ", integrated <{" in text and ", iq <{" not in text
+    level_line, point_line = [line for line in text.splitlines() if " pulse.readout " in line]
+    assert level_line.endswith("!pulse.measurement") and point_line.endswith("!pulse.iq_data")
     for version in (1, 2):
         first, second = _readouts(lowered.export_to_controller(version=version))
         assert "acquire" not in first
@@ -241,6 +244,206 @@ def test_a_call_takes_a_point_as_complex():
     result = pulse.simulate(lowered, shots_count=20, seed=3, levels=2)
     answers = [a for b in result.branches for a in b.answers("magnitude")]
     assert answers and all(a > 0 for a in answers)
+
+
+# ── Scheduling ───────────────────────────────────────────────────────────────
+
+
+@pulse.classical(max_latency_ns=200, reaction_deadline_ns=2000)
+def react(p: complex) -> float:
+    return abs(p)
+
+
+def _scheduled_kernels(acquire):
+    """Kernels that read out with *acquire* and send what they read to a
+    call, in a rolled loop too or while a drive plays, carry it, pass it
+    into or out of a kernel with its own schedule, branch on a call's answer
+    to it, or leave it unread."""
+
+    @pulse.kernel
+    def sends(q):
+        d = get_drive_line(q)
+        r = get_readout_line(q)
+        p = readout(r, square(400, 0.05), acquire=acquire)
+        sync(d, r)
+        drive(d, square(40, 0.001 * magnitude.submit(p).result()))
+
+    @pulse.kernel
+    def sends_while_driving(q):
+        d = get_drive_line(q)
+        r = get_readout_line(q)
+        p = readout(r, square(400, 0.05), acquire=acquire)
+        sync(d, r)
+        react.submit(p).result()
+        drive(d, square(40, PI_AMP))
+
+    @pulse.kernel(unroll_threshold=0)
+    def sends_in_a_loop(q):
+        d = get_drive_line(q)
+        r = get_readout_line(q)
+        for _ in range(5):
+            p = readout(r, square(400, 0.05), acquire=acquire)
+            drive(d, square(40, 0.001 * magnitude.submit(p).result()))
+
+    @pulse.kernel(schedule="alap")
+    def reads(q):
+        r = get_readout_line(q)
+        return readout(r, square(400, 0.05), acquire=acquire)
+
+    @pulse.kernel
+    def sends_what_a_kernel_read(q):
+        d = get_drive_line(q)
+        p = reads(q)
+        drive(d, square(40, 0.001 * magnitude.submit(p).result()))
+
+    @pulse.kernel(schedule="alap")
+    def sent_by_a_kernel(q, p):
+        d = get_drive_line(q)
+        drive(d, square(40, 0.001 * magnitude.submit(p).result()))
+
+    @pulse.kernel
+    def passes_to_a_kernel(q):
+        r = get_readout_line(q)
+        sent_by_a_kernel(q, readout(r, square(400, 0.05), acquire=acquire))
+
+    @pulse.kernel
+    def branches_on_the_answer(q):
+        d = get_drive_line(q)
+        r = get_readout_line(q)
+        p = readout(r, square(400, 0.05), acquire=acquire)
+        if magnitude.submit(p).result() > 0.5:
+            drive(d, square(40, PI_AMP))
+
+    @pulse.kernel(unroll_threshold=0)
+    def reacts_in_a_loop(q):
+        r = get_readout_line(q)
+        for _ in range(5):
+            react.submit(readout(r, square(100, 0.05), acquire=acquire)).result()
+
+    @pulse.kernel(unroll_threshold=0)
+    def reacts_to_a_carried_one(q):
+        r = get_readout_line(q)
+        p = readout(r, square(100, 0.05), acquire=acquire)
+        for _ in range(5):
+            react.submit(p).result()
+            p = readout(r, square(100, 0.05), acquire=acquire)
+
+    @pulse.kernel
+    def leaves_it_unread(q):
+        d = get_drive_line(q)
+        r = get_readout_line(q)
+        readout(r, square(400, 0.05), acquire=acquire)
+        drive(d, square(400, PI_AMP))
+        drive(d, square(400, PI_AMP))
+
+    return {
+        "sends": sends,
+        "sends_while_driving": sends_while_driving,
+        "sends_in_a_loop": sends_in_a_loop,
+        "sends_what_a_kernel_read": sends_what_a_kernel_read,
+        "passes_to_a_kernel": passes_to_a_kernel,
+        "branches_on_the_answer": branches_on_the_answer,
+        "reacts_in_a_loop": reacts_in_a_loop,
+        "reacts_to_a_carried_one": reacts_to_a_carried_one,
+        "leaves_it_unread": leaves_it_unread,
+    }
+
+
+_SYSTEMS = {
+    "plain": None,
+    # Outcomes usable 20 cycles after a readout ends.
+    "latency": [pulse.Controller(drive_lines=[0], readout_lines=[0], feedback_latency_cycles=20)],
+    # The readout on controllers[0], the drive on controllers[1].
+    "two": [
+        pulse.Controller(readout_lines=[0], feedback_latency_cycles=12, peer_latency_cycles=16),
+        pulse.Controller(drive_lines=[0], feedback_latency_cycles=4),
+    ],
+    # Both block on calls: a call holds the lines of the controller that
+    # reads out what it sends, and of those that use its answer.
+    "blocking": [
+        pulse.Controller(readout_lines=[0], blocks_on_calls=True),
+        pulse.Controller(drive_lines=[0], blocks_on_calls=True),
+    ],
+    # The latency on a readout line delayed 6 ns (12 cycles), which an
+    # outcome waits for under rcp.
+    "delayed": [
+        pulse.Controller(
+            drive_lines=[0],
+            readout_lines=[ReadoutLine(0, delay_ns=6.0)],
+            feedback_latency_cycles=20,
+        )
+    ],
+}
+_SCHEDULED = [
+    (system, schedule)
+    for system in ("plain", "latency", "two", "blocking")
+    for schedule in ("alap", "asap", "alap_rcp")
+] + [("delayed", "alap_rcp")]
+
+
+def _refusal(name, system, schedule):
+    """What compiling kernel *name* is refused for, a level and a point
+    alike: a kernel with its own schedule= under rcp, or one that makes a
+    call on controllers that block on calls; a reaction deadline on a
+    readout a loop carries."""
+    if name == "reacts_to_a_carried_one":
+        return "a measurement it carries comes out of a branch or a loop"
+    if name in ("sends_what_a_kernel_read", "passes_to_a_kernel") and schedule == "alap_rcp":
+        return "does not support kernels called with their own schedule= yet"
+    if name == "passes_to_a_kernel" and system == "blocking":
+        return "the controller blocks on calls"
+    return None
+
+
+def _as_level(text):
+    """*text* as the program that reads out levels instead gives it."""
+    text = re.sub(r", integrated( <| :)", r", level\1", text)
+    return text.replace("!pulse.iq_data", "!pulse.measurement")
+
+
+def _without_acquire(value):
+    if isinstance(value, dict):
+        return {k: _without_acquire(v) for k, v in value.items() if k != "acquire"}
+    if isinstance(value, list):
+        return [_without_acquire(v) for v in value]
+    return value
+
+
+def _built(kernel, system, schedule):
+    """The IR and the exports (each the format allows: /1 and /2 of one
+    controller, /1 alone with a delayed line, /1 of each of several) of
+    *kernel* on *system*, or the error compiling it raises."""
+    controllers = _SYSTEMS[system]
+    dev = _device(controllers=controllers)
+    try:
+        compiled = pulse.compile(kernel, quantum_system=dev, schedule=schedule)
+        lowered = compiled.lower(dev.qudits[0])
+    except (CompilationError, RuntimeError) as e:
+        return str(e)
+    if controllers is not None and len(controllers) > 1:
+        programs = [lowered.export_to_controller(controller=k) for k in range(len(controllers))]
+    else:
+        programs = [lowered.export_to_controller()]
+        if system != "delayed":
+            programs.append(lowered.export_to_controller(version=2))
+    return lowered.mlir(), json.dumps(programs)
+
+
+@pytest.mark.parametrize(("system", "schedule"), _SCHEDULED)
+@pytest.mark.parametrize("name", list(_scheduled_kernels("level")))
+def test_a_point_schedules_as_a_level_does(name, system, schedule):
+    level = _built(_scheduled_kernels("level")[name], system, schedule)
+    point = _built(_scheduled_kernels("integrated")[name], system, schedule)
+    refused = _refusal(name, system, schedule)
+    if refused:
+        assert isinstance(level, str) and refused in level, level
+        assert _as_level(point) == level
+        return
+    assert not isinstance(level, str), level
+    assert not isinstance(point, str), point
+    assert "!pulse.iq_data" in point[0] and "!pulse.iq_data" not in level[0]
+    assert _as_level(point[0]) == level[0]
+    assert json.dumps(_without_acquire(json.loads(point[1]))) == level[1]
 
 
 # ── Simulation ───────────────────────────────────────────────────────────────

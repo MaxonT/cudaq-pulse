@@ -32,7 +32,6 @@
 #include "cudaq-pulse/Dialect/Classical/ClassicalTypes.h.inc"
 #define GET_OP_CLASSES
 #include "cudaq-pulse/Dialect/Classical/ClassicalOps.h.inc"
-#include "cudaq-pulse/Dialect/Classical/Schema.h"
 
 #include "cudaq-pulse/Analysis/ClassicalTiming.h"
 #include "cudaq-pulse/Analysis/Durations.h"
@@ -49,16 +48,17 @@ static bool isTimedOp(mlir::Operation *op) {
   return mlir::isa<pulse::DriveOp, pulse::ReadoutOp, pulse::WaitOp>(op);
 }
 
-/// The measurement results a branch condition is computed from, not
-/// through a link or an answer (see the scheduler's conditionMeasurements):
-/// pulse-classical-check checks a branch on an answer.
+/// The readout results (levels and IQ points) a branch condition is computed
+/// from, not through a link or an answer (see the scheduler's
+/// conditionMeasurements): pulse-classical-check checks a branch on an
+/// answer.
 static void conditionMeasurements(mlir::Value value,
                                   llvm::SmallVectorImpl<mlir::Value> &found,
                                   llvm::DenseSet<mlir::Value> &seen) {
   if (mlir::isa<classical::LinkType>(value.getType()) ||
       !seen.insert(value).second)
     return;
-  if (mlir::isa<pulse::MeasurementType>(value.getType())) {
+  if (pulse::isReadoutResultType(value.getType())) {
     found.push_back(value);
     return;
   }
@@ -279,42 +279,8 @@ public:
       return checkMeasurement(op, isSet.getMeasurement());
     if (auto wait = mlir::dyn_cast<pulse::WaitOp>(op))
       return checkBounds(wait);
-    if (auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op))
-      integrated |= readout.getMode() == pulse::ReadoutMode::Integrated;
-  }
-
-  /// Whether the module has an integrated readout: only then can a call
-  /// send one where it takes levels.
-  bool integrated = false;
-
-  /// A classical call takes the level of a readout for a bits or levels
-  /// argument: not from an integrated readout, which gives an IQ point.
-  void checkSent(classical::SubmitOp submit, classical::CallableOp callable) {
-    auto operands = submit.getArgs();
-    size_t next = 0;
-    for (mlir::Attribute entry : callable.getArgs()) {
-      auto desc = classical::parseDescriptor(
-          mlir::cast<mlir::StringAttr>(entry).getValue());
-      if (!desc)
-        return;
-      bool levels = desc->kind == classical::Kind::Bits ||
-                    desc->kind == classical::Kind::Levels;
-      for (int64_t k = 0; k < desc->values() && next < operands.size();
-           ++k, ++next) {
-        if (!levels)
-          continue;
-        mlir::Operation *source = wrongSource(operands[next]);
-        if (!source || !isIntegrated(source))
-          continue;
-        submit.emitOpError("sends value ")
-            << next << " as " << mlir::cast<mlir::StringAttr>(entry).getValue()
-            << ", the level of a readout, but it comes from an integrated "
-               "readout, which acquires an IQ point and no level; read it out "
-               "with mode level, or pass it as an iq argument";
-        hadError = true;
-        return;
-      }
-    }
+    if (auto submit = mlir::dyn_cast<classical::SubmitOp>(op))
+      return checkSentPoints(submit);
   }
 
 private:
@@ -412,45 +378,49 @@ private:
     return length;
   }
 
-  static bool isIntegrated(mlir::Operation *op) {
-    auto readout = mlir::dyn_cast<pulse::ReadoutOp>(op);
-    return readout && readout.getMode() == pulse::ReadoutMode::Integrated;
-  }
-
-  /// A measurement whose level is read comes from a readout that gives a
-  /// level on every path: through either arm of an scf.if, a loop's initial
-  /// and yielded value (only the yielded one for the result of a loop that
-  /// runs), a schedule block's operand and yielded value. A function
-  /// argument is the caller's.
+  /// A measurement comes from a readout on every path: through either arm
+  /// of an scf.if, a loop's initial and yielded value (only the yielded one
+  /// for the result of a loop that runs), a schedule block's operand and
+  /// yielded value. A function argument is the caller's.
   void checkMeasurement(mlir::Operation *op, mlir::Value measurement) {
-    if (auto readout = measurement.getDefiningOp<pulse::ReadoutOp>();
-        readout && readout.getMode() != pulse::ReadoutMode::Integrated)
+    if (measurement.getDefiningOp<pulse::ReadoutOp>())
       return;
-    mlir::Operation *wrong = wrongSource(measurement);
-    if (!wrong)
-      return;
-    if (isIntegrated(wrong))
-      op->emitOpError("reads the level of an integrated readout, which "
-                      "acquires an IQ point and no level; read it out with "
-                      "mode level to branch on its level");
-    else
+    if (mlir::Operation *wrong = sourceOtherThanReadout(measurement)) {
       op->emitOpError("measurement must be produced by pulse.readout, got ")
           << wrong->getName();
-    hadError = true;
+      hadError = true;
+    }
   }
 
-  /// An op that `measurement` may come from that gives no level: one that
-  /// is not a readout, or an integrated readout; else null. Each value is
-  /// followed once; a loop's carried value is assumed to come from a
-  /// readout while it is being followed.
-  mlir::Operation *wrongSource(mlir::Value measurement) {
+  /// A call takes an IQ point from a readout on every path, as pulse.is_set
+  /// takes a measurement: the exports list the readout a call sends, and
+  /// have no event for pulse.iq_acquire.
+  void checkSentPoints(classical::SubmitOp submit) {
+    for (mlir::Value point : submit.getArgs()) {
+      if (!mlir::isa<pulse::IQDataType>(point.getType()) ||
+          point.getDefiningOp<pulse::ReadoutOp>())
+        continue;
+      if (mlir::Operation *wrong = sourceOtherThanReadout(point)) {
+        submit.emitOpError("sends an IQ point that must be produced by "
+                           "pulse.readout, got ")
+            << wrong->getName();
+        hadError = true;
+        return;
+      }
+    }
+  }
+
+  /// An op that is not a readout and that `measurement` may come from, or
+  /// null. Each value is followed once; a loop's carried value is assumed
+  /// to come from a readout while it is being followed.
+  mlir::Operation *sourceOtherThanReadout(mlir::Value measurement) {
     auto [it, inserted] = sources.try_emplace(measurement, nullptr);
     if (!inserted)
       return it->second;
     auto follow = [&](mlir::Value a, mlir::Value b = {}) -> mlir::Operation * {
-      if (mlir::Operation *wrong = wrongSource(a))
+      if (mlir::Operation *wrong = sourceOtherThanReadout(a))
         return wrong;
-      return b ? wrongSource(b) : nullptr;
+      return b ? sourceOtherThanReadout(b) : nullptr;
     };
     mlir::Operation *wrong = nullptr;
     if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(measurement)) {
@@ -483,7 +453,7 @@ private:
       } else if (auto block = mlir::dyn_cast<pulse::ScheduleBlockOp>(def))
         wrong =
             follow(block.getBody().front().getTerminator()->getOperand(index));
-      else if (!mlir::isa<pulse::ReadoutOp>(def) || isIntegrated(def))
+      else if (!mlir::isa<pulse::ReadoutOp>(def))
         wrong = def;
     }
     sources[measurement] = wrong;
@@ -713,13 +683,6 @@ struct PulseVerifyPass
         hadError = true;
       }
     });
-    if (waveforms.integrated)
-      module.walk([&](classical::SubmitOp op) {
-        if (auto callable =
-                symbols.lookupNearestSymbolFrom<classical::CallableOp>(
-                    op, op.getCalleeAttr()))
-          waveforms.checkSent(op, callable);
-      });
     // A call of a controller that blocks on calls holds every line, which a
     // schedule block, placed whole, cannot.
     if (pulse::blocksOnCalls(module))

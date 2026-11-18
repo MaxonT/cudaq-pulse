@@ -417,11 +417,12 @@ takes the point gets one drawn for the call from the same model, not the
 one ``acquisitions`` gives that shot.
 
 The IR keeps the mode on ``pulse.readout`` (``level`` for a level,
-``integrated`` for a point), and the controller export gives such a
-readout ``"acquire": "integrated"`` (see :doc:`controller_backends`); a
-controller acquires points only if it supports
-``Capability.ACQUIRE_INTEGRATED``. A program that reads out only levels
-exports exactly as before.
+``integrated`` for a point), and an integrated readout gives the point as
+``!pulse.iq_data`` where a level readout gives ``!pulse.measurement``. The
+controller export gives such a readout ``"acquire": "integrated"`` (see
+:doc:`controller_backends`); a controller acquires points only if it
+supports ``Capability.ACQUIRE_INTEGRATED``. A program that reads out only
+levels exports exactly as before.
 
 Python Inside Kernels
 ---------------------
